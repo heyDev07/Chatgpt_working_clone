@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Copy, Sparkles } from "lucide-react";
+import { Check, Copy, RotateCw, Sparkles } from "lucide-react";
 import { useState } from "react";
 
 import type { Message } from "@/lib/types";
@@ -8,7 +8,15 @@ import type { Message } from "@/lib/types";
 import { MarkdownContent } from "./MarkdownContent";
 import { StreamingCursor } from "./StreamingCursor";
 
-export function MessageBubble({ message, isStreaming }: { message: Message; isStreaming?: boolean }) {
+export function MessageBubble({
+  message,
+  isStreaming,
+  onRegenerate,
+}: {
+  message: Message;
+  isStreaming?: boolean;
+  onRegenerate?: () => void;
+}) {
   const isUser = message.role === "user";
   const [copied, setCopied] = useState(false);
 
@@ -39,14 +47,26 @@ export function MessageBubble({ message, isStreaming }: { message: Message; isSt
           {isStreaming && <StreamingCursor />}
         </div>
         {!isStreaming && message.content && (
-          <button
-            onClick={handleCopy}
-            aria-label="Copy message"
-            className="mt-1 flex items-center gap-1 text-xs text-black/40 hover:text-black opacity-0 group-hover:opacity-100 dark:text-white/40 dark:hover:text-white"
-          >
-            {copied ? <Check size={13} /> : <Copy size={13} />}
-            {copied ? "Copied" : "Copy"}
-          </button>
+          <div className="mt-1 flex items-center gap-3 opacity-0 group-hover:opacity-100">
+            <button
+              onClick={handleCopy}
+              aria-label="Copy message"
+              className="flex items-center gap-1 text-xs text-black/40 hover:text-black dark:text-white/40 dark:hover:text-white"
+            >
+              {copied ? <Check size={13} /> : <Copy size={13} />}
+              {copied ? "Copied" : "Copy"}
+            </button>
+            {onRegenerate && (
+              <button
+                onClick={onRegenerate}
+                aria-label="Regenerate response"
+                className="flex items-center gap-1 text-xs text-black/40 hover:text-black dark:text-white/40 dark:hover:text-white"
+              >
+                <RotateCw size={13} />
+                Regenerate
+              </button>
+            )}
+          </div>
         )}
       </div>
     </div>

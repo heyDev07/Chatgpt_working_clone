@@ -8,20 +8,15 @@ export interface StreamCallbacks {
   onError: (message: string) => void;
 }
 
-export function streamMessage(
-  conversationId: string,
-  content: string,
-  callbacks: StreamCallbacks,
-  signal: AbortSignal
-): Promise<void> {
-  return fetchEventSource(`${API_BASE_URL}/conversations/${conversationId}/messages`, {
+function consumeStream(url: string, body: string | undefined, callbacks: StreamCallbacks, signal: AbortSignal) {
+  return fetchEventSource(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${getAccessToken() ?? ""}`,
     },
     credentials: "include",
-    body: JSON.stringify({ content }),
+    body,
     signal,
     async onopen(response) {
       if (!response.ok) {
@@ -46,4 +41,31 @@ export function streamMessage(
     },
     openWhenHidden: true,
   });
+}
+
+export function streamMessage(
+  conversationId: string,
+  content: string,
+  callbacks: StreamCallbacks,
+  signal: AbortSignal
+): Promise<void> {
+  return consumeStream(
+    `${API_BASE_URL}/conversations/${conversationId}/messages`,
+    JSON.stringify({ content }),
+    callbacks,
+    signal
+  );
+}
+
+export function regenerateMessage(
+  conversationId: string,
+  callbacks: StreamCallbacks,
+  signal: AbortSignal
+): Promise<void> {
+  return consumeStream(
+    `${API_BASE_URL}/conversations/${conversationId}/regenerate`,
+    undefined,
+    callbacks,
+    signal
+  );
 }

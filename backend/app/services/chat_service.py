@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import NotFoundError, ProviderError
 from app.models.conversation import Conversation
+from app.models.message import Message
 from app.providers.base_provider import ChatMessage
 from app.providers.provider_manager import ProviderManager
 from app.repositories.conversation_repo import ConversationRepository
@@ -50,6 +51,36 @@ class ChatService:
             conversation.title = content[:50]
             await self.db.commit()
 
+        async for event in self._generate_and_persist(conversation, history):
+            yield event
+
+    async def regenerate(self, conversation_id: uuid.UUID, user_id: uuid.UUID) -> AsyncIterator[dict]:
+        """Re-run the assistant turn for the current end of the conversation. If the last
+        message is an assistant reply (the normal 'regenerate' case), it's discarded and
+        replaced. If the last message is a user message with no reply (e.g. a totally failed
+        attempt where nothing was ever persisted), this just generates the missing reply -
+        covering both 'regenerate' and 'retry after failure' with one endpoint."""
+        conversation = await self.conversations.get_for_user(conversation_id, user_id)
+        if not conversation:
+            yield {"event": "error", "data": {"code": "not_found", "message": "Conversation not found"}}
+            return
+
+        history = await self.messages.list_for_conversation(conversation.id)
+        if not history:
+            yield {"event": "error", "data": {"code": "invalid_state", "message": "Nothing to regenerate"}}
+            return
+
+        if history[-1].role == "assistant":
+            last_assistant = history.pop()
+            await self.messages.delete(last_assistant)
+            await self.db.commit()
+
+        async for event in self._generate_and_persist(conversation, history):
+            yield event
+
+    async def _generate_and_persist(
+        self, conversation: Conversation, history: list[Message]
+    ) -> AsyncIterator[dict]:
         provider = self.provider_manager.get_provider(conversation.provider)
         chat_messages = [ChatMessage(role=m.role, content=m.content) for m in history]
 

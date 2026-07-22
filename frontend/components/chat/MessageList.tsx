@@ -9,9 +9,11 @@ import { MessageBubble } from "./MessageBubble";
 export function MessageList({
   messages,
   streamingContent,
+  onRegenerate,
 }: {
   messages: Message[];
   streamingContent: string | null;
+  onRegenerate?: () => void;
 }) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -30,8 +32,16 @@ export function MessageList({
   return (
     <div className="flex-1 overflow-y-auto">
       <div className="mx-auto max-w-3xl px-4 py-8 flex flex-col gap-6">
-        {messages.map((message) => (
-          <MessageBubble key={message.id} message={message} />
+        {messages.map((message, index) => (
+          <MessageBubble
+            key={message.id}
+            message={message}
+            onRegenerate={
+              streamingContent === null && index === messages.length - 1 && message.role === "assistant"
+                ? onRegenerate
+                : undefined
+            }
+          />
         ))}
         {streamingContent !== null && (
           <MessageBubble
