@@ -48,12 +48,29 @@ class ConversationService:
         title: str | None = None,
         is_pinned: bool | None = None,
         is_archived: bool | None = None,
+        provider: str | None = None,
+        model: str | None = None,
+        system_prompt: str | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        top_p: float | None = None,
     ) -> Conversation:
         conversation = await self.conversations.get_for_user(conversation_id, user_id)
         if not conversation:
             raise NotFoundError("Conversation not found")
+        if provider is not None:
+            self.provider_manager.get_provider(provider)  # raises if not a configured provider
         conversation = await self.conversations.update(
-            conversation, title=title, is_pinned=is_pinned, is_archived=is_archived
+            conversation,
+            title=title,
+            is_pinned=is_pinned,
+            is_archived=is_archived,
+            provider=provider,
+            model=model,
+            system_prompt=system_prompt,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            top_p=top_p,
         )
         await self.db.commit()
         return conversation

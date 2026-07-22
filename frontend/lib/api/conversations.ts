@@ -20,10 +20,19 @@ export function getConversation(id: string): Promise<ConversationDetail> {
   return apiFetch<ConversationDetail>(`/conversations/${id}`);
 }
 
-export function updateConversation(
-  id: string,
-  updates: { title?: string; is_pinned?: boolean; is_archived?: boolean }
-): Promise<Conversation> {
+export interface ConversationUpdatePayload {
+  title?: string;
+  is_pinned?: boolean;
+  is_archived?: boolean;
+  provider?: string;
+  model?: string;
+  system_prompt?: string;
+  temperature?: number;
+  max_tokens?: number;
+  top_p?: number;
+}
+
+export function updateConversation(id: string, updates: ConversationUpdatePayload): Promise<Conversation> {
   return apiFetch<Conversation>(`/conversations/${id}`, {
     method: "PATCH",
     body: JSON.stringify(updates),

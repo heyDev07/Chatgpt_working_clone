@@ -63,6 +63,12 @@ class ConversationRepository:
         title: str | None = None,
         is_pinned: bool | None = None,
         is_archived: bool | None = None,
+        provider: str | None = None,
+        model: str | None = None,
+        system_prompt: str | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        top_p: float | None = None,
     ) -> Conversation:
         if title is not None:
             conversation.title = title
@@ -70,6 +76,18 @@ class ConversationRepository:
             conversation.is_pinned = is_pinned
         if is_archived is not None:
             conversation.is_archived = is_archived
+        if provider is not None:
+            conversation.provider = provider
+        if model is not None:
+            conversation.model = model
+        if system_prompt is not None:
+            conversation.system_prompt = system_prompt
+        if temperature is not None:
+            conversation.temperature = temperature
+        if max_tokens is not None:
+            conversation.max_tokens = max_tokens
+        if top_p is not None:
+            conversation.top_p = top_p
         await self.db.flush()
         # updated_at has onupdate=func.now() (server-computed) - without an explicit refresh,
         # accessing it after this method returns triggers a lazy-reload outside the awaited

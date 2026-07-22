@@ -118,7 +118,19 @@ class ChatService:
         self, conversation: Conversation, history: list[Message]
     ) -> AsyncIterator[dict]:
         provider = self.provider_manager.get_provider(conversation.provider)
-        chat_messages = [ChatMessage(role=m.role, content=m.content) for m in history]
+
+        chat_messages = []
+        if conversation.system_prompt:
+            chat_messages.append(ChatMessage(role="system", content=conversation.system_prompt))
+        chat_messages.extend(ChatMessage(role=m.role, content=m.content) for m in history)
+
+        generation_kwargs = {}
+        if conversation.temperature is not None:
+            generation_kwargs["temperature"] = conversation.temperature
+        if conversation.max_tokens is not None:
+            generation_kwargs["max_tokens"] = conversation.max_tokens
+        if conversation.top_p is not None:
+            generation_kwargs["top_p"] = conversation.top_p
 
         full_content = ""
         finish_reason = "stop"
@@ -126,7 +138,7 @@ class ChatService:
         error_message: str | None = None
 
         try:
-            async for chunk in provider.stream(chat_messages, conversation.model):
+            async for chunk in provider.stream(chat_messages, conversation.model, **generation_kwargs):
                 if chunk.delta:
                     full_content += chunk.delta
                     yield {"event": "token", "data": {"delta": chunk.delta}}

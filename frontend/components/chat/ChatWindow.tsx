@@ -1,6 +1,7 @@
 "use client";
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Settings } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { getConversation } from "@/lib/api/conversations";
@@ -8,6 +9,7 @@ import { editMessage, regenerateMessage, streamMessage } from "@/lib/api/stream"
 import type { Message } from "@/lib/types";
 
 import { Composer } from "./Composer";
+import { ConversationSettings } from "./ConversationSettings";
 import { MessageList } from "./MessageList";
 
 export function ChatWindow({ conversationId }: { conversationId: string }) {
@@ -25,6 +27,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
   const [streamingContent, setStreamingContent] = useState<string | null>(null);
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showSettings, setShowSettings] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
@@ -179,6 +182,18 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
 
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden">
+      <div className="flex items-center justify-between px-4 py-2.5 border-b border-black/10 dark:border-white/10">
+        <span className="truncate text-sm font-medium text-black/70 dark:text-white/70">
+          {conversation?.title}
+        </span>
+        <button
+          onClick={() => setShowSettings(true)}
+          aria-label="Conversation settings"
+          className="flex-shrink-0 rounded-lg p-1.5 text-black/50 hover:bg-black/5 dark:text-white/50 dark:hover:bg-white/10"
+        >
+          <Settings size={16} />
+        </button>
+      </div>
       <MessageList
         messages={messages}
         streamingContent={streamingContent}
@@ -194,6 +209,9 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
         </div>
       )}
       <Composer onSend={handleSend} onStop={handleStop} disabled={isSending} />
+      {showSettings && conversation && (
+        <ConversationSettings conversation={conversation} onClose={() => setShowSettings(false)} />
+      )}
     </div>
   );
 }

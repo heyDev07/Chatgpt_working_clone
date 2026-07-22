@@ -44,6 +44,16 @@ def _split_system_and_turns(messages: list[ChatMessage]) -> tuple[str | None, li
     return system_instruction, turns
 
 
+_KWARG_TRANSLATION = {"max_tokens": "max_output_tokens"}
+
+
+def _translate_kwargs(kwargs: dict) -> dict:
+    """The generation kwargs chat_service builds use provider-agnostic names
+    (temperature/max_tokens/top_p); Gemini's SDK expects max_output_tokens instead of
+    max_tokens, so translate here rather than leaking Gemini-specific names upstream."""
+    return {_KWARG_TRANSLATION.get(key, key): value for key, value in kwargs.items()}
+
+
 def _usage_from_metadata(usage_metadata: types.GenerateContentResponseUsageMetadata | None) -> Usage:
     if usage_metadata is None:
         return Usage(prompt_tokens=0, completion_tokens=0, total_tokens=0)
@@ -62,7 +72,9 @@ class GeminiProvider(BaseProvider):
 
     async def generate(self, messages: list[ChatMessage], model: str, **kwargs) -> GenerateResult:
         system_instruction, turns = _split_system_and_turns(messages)
-        config = types.GenerateContentConfig(system_instruction=system_instruction, **kwargs)
+        config = types.GenerateContentConfig(
+            system_instruction=system_instruction, **_translate_kwargs(kwargs)
+        )
 
         try:
             response = await self._client.aio.models.generate_content(
@@ -80,7 +92,9 @@ class GeminiProvider(BaseProvider):
 
     async def stream(self, messages: list[ChatMessage], model: str, **kwargs) -> AsyncIterator[StreamChunk]:
         system_instruction, turns = _split_system_and_turns(messages)
-        config = types.GenerateContentConfig(system_instruction=system_instruction, **kwargs)
+        config = types.GenerateContentConfig(
+            system_instruction=system_instruction, **_translate_kwargs(kwargs)
+        )
 
         try:
             response_stream = await self._client.aio.models.generate_content_stream(

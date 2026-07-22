@@ -65,6 +65,12 @@ async def update_conversation(
         title=payload.title,
         is_pinned=payload.is_pinned,
         is_archived=payload.is_archived,
+        provider=payload.provider,
+        model=payload.model,
+        system_prompt=payload.system_prompt,
+        temperature=payload.temperature,
+        max_tokens=payload.max_tokens,
+        top_p=payload.top_p,
     )
 
 

@@ -20,6 +20,10 @@ export interface Conversation {
   model: string;
   is_archived: boolean;
   is_pinned: boolean;
+  system_prompt: string | null;
+  temperature: number | null;
+  max_tokens: number | null;
+  top_p: number | null;
   created_at: string;
   updated_at: string;
 }
