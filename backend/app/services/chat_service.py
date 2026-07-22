@@ -11,6 +11,7 @@ from app.models.message import Message
 from app.providers.base_provider import ChatMessage
 from app.providers.provider_manager import ProviderManager
 from app.repositories.conversation_repo import ConversationRepository
+from app.repositories.memory_repo import MemoryRepository
 from app.repositories.message_repo import MessageRepository
 from app.services.memory_extraction import run_memory_extraction
 
@@ -20,6 +21,7 @@ class ChatService:
         self.db = db
         self.conversations = ConversationRepository(db)
         self.messages = MessageRepository(db)
+        self.memories = MemoryRepository(db)
         self.provider_manager = provider_manager
 
     async def get_authorized_conversation(
@@ -135,6 +137,22 @@ class ChatService:
         chat_messages = []
         if conversation.system_prompt:
             chat_messages.append(ChatMessage(role="system", content=conversation.system_prompt))
+
+        remembered = await self.memories.top_for_user(conversation.user_id, limit=10)
+        if remembered:
+            memory_lines = "\n".join(f"- {m.memory_text}" for m in remembered)
+            chat_messages.append(
+                ChatMessage(
+                    role="system",
+                    content=(
+                        "Relevant context you remember about this user from past conversations:\n"
+                        f"{memory_lines}\n"
+                        "Use this naturally where relevant. Don't mention that you 'remember' "
+                        "things unless it comes up naturally in conversation."
+                    ),
+                )
+            )
+
         chat_messages.extend(ChatMessage(role=m.role, content=m.content) for m in history)
 
         generation_kwargs = {}
