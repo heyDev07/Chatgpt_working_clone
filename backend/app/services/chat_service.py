@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import uuid
 from collections.abc import AsyncIterator
 
@@ -11,9 +12,25 @@ from app.models.message import Message
 from app.providers.base_provider import ChatMessage
 from app.providers.provider_manager import ProviderManager
 from app.repositories.conversation_repo import ConversationRepository
+from app.repositories.conversation_summary_repo import ConversationSummaryRepository
 from app.repositories.memory_repo import MemoryRepository
 from app.repositories.message_repo import MessageRepository
 from app.services.memory_extraction import run_memory_extraction
+
+logger = logging.getLogger("app.summarization")
+
+# Once a conversation exceeds this many messages, older ones are collapsed into a running
+# summary and only the most recent RECENT_MESSAGE_COUNT are sent verbatim - keeps token usage
+# from growing unbounded in long conversations. Values match the book's "10-20 messages remain
+# unchanged" guidance.
+SUMMARIZE_THRESHOLD = 25
+RECENT_MESSAGE_COUNT = 15
+
+_SUMMARY_SYSTEM_PROMPT = (
+    "Summarize the following conversation concisely, preserving key facts, decisions, and "
+    "context needed to continue it naturally. Write a compact narrative paragraph, not a "
+    "transcript. No meta-commentary about the summary itself."
+)
 
 
 class ChatService:
@@ -22,6 +39,7 @@ class ChatService:
         self.conversations = ConversationRepository(db)
         self.messages = MessageRepository(db)
         self.memories = MemoryRepository(db)
+        self.summaries = ConversationSummaryRepository(db)
         self.provider_manager = provider_manager
 
     async def get_authorized_conversation(
@@ -129,10 +147,46 @@ class ChatService:
         async for event in self._generate_and_persist(conversation, history):
             yield event
 
+    async def _get_effective_history(
+        self, conversation: Conversation, history: list[Message]
+    ) -> tuple[list[Message], str | None]:
+        """Returns the messages to actually send to the provider, plus a summary of anything
+        older that got collapsed out (or None if the conversation is still short enough to send
+        in full). Reuses an existing summary as-is when it already covers all current "older"
+        messages; only calls the LLM to refresh it when new older messages have accumulated."""
+        if len(history) <= SUMMARIZE_THRESHOLD:
+            return history, None
+
+        recent = history[-RECENT_MESSAGE_COUNT:]
+        older = history[:-RECENT_MESSAGE_COUNT]
+
+        existing = await self.summaries.get(conversation.id)
+        if existing and older and existing.summarized_through_message_id == older[-1].id:
+            return recent, existing.summary
+
+        provider = self.provider_manager.get_provider(conversation.provider)
+        transcript = "\n".join(f"{m.role}: {m.content}" for m in older)
+        prior_note = f"Previous summary of even earlier messages:\n{existing.summary}\n\n" if existing else ""
+        summarize_messages = [
+            ChatMessage(role="system", content=_SUMMARY_SYSTEM_PROMPT),
+            ChatMessage(role="user", content=f"{prior_note}Conversation to summarize:\n{transcript}"),
+        ]
+        try:
+            result = await provider.generate(summarize_messages, conversation.model, temperature=0.3, max_tokens=400)
+            summary_text = result.message.content.strip()
+            await self.summaries.upsert(conversation.id, summary_text, older[-1].id)
+            await self.db.commit()
+            return recent, summary_text
+        except Exception:
+            logger.exception("Summarization failed for conversation %s, using full history", conversation.id)
+            return history, None
+
     async def _generate_and_persist(
         self, conversation: Conversation, history: list[Message]
     ) -> AsyncIterator[dict]:
         provider = self.provider_manager.get_provider(conversation.provider)
+
+        effective_history, summary_text = await self._get_effective_history(conversation, history)
 
         chat_messages = []
         if conversation.system_prompt:
@@ -153,7 +207,12 @@ class ChatService:
                 )
             )
 
-        chat_messages.extend(ChatMessage(role=m.role, content=m.content) for m in history)
+        if summary_text:
+            chat_messages.append(
+                ChatMessage(role="system", content=f"Summary of earlier conversation:\n{summary_text}")
+            )
+
+        chat_messages.extend(ChatMessage(role=m.role, content=m.content) for m in effective_history)
 
         generation_kwargs = {}
         if conversation.temperature is not None:
