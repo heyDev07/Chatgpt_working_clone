@@ -1,5 +1,8 @@
 from fastapi import APIRouter
 
-api_router = APIRouter()
+from app.api.v1 import auth
 
-# Sub-routers (auth, conversations, messages) are included here as they're built.
+api_router = APIRouter()
+api_router.include_router(auth.router)
+
+# Sub-routers (conversations, messages) are included here as they're built.
