@@ -3,16 +3,20 @@ import uuid
 from fastapi import APIRouter, Depends, File, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, get_db
+from app.api.deps import get_current_user, get_db, get_provider_manager
 from app.models.user import User
+from app.providers.provider_manager import ProviderManager
 from app.schemas.document import DocumentOut
 from app.services.document_service import DocumentService
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
 
-def _get_service(db: AsyncSession = Depends(get_db)) -> DocumentService:
-    return DocumentService(db)
+def _get_service(
+    db: AsyncSession = Depends(get_db),
+    provider_manager: ProviderManager = Depends(get_provider_manager),
+) -> DocumentService:
+    return DocumentService(db, provider_manager)
 
 
 @router.post("/upload", response_model=DocumentOut, status_code=201)

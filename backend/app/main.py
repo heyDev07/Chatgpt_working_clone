@@ -13,6 +13,7 @@ from app.db.redis_client import get_redis
 from app.middleware.error_handler import register_error_handlers
 from app.middleware.request_logging import RequestLoggingMiddleware
 from app.storage.s3_client import ensure_bucket_exists
+from app.vectorstore.qdrant_client import ensure_collection
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
@@ -24,6 +25,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     redis = get_redis()
     await redis.ping()
     await ensure_bucket_exists()
+    await ensure_collection()
 
     yield
 

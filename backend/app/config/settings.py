@@ -30,9 +30,11 @@ class Settings(BaseSettings):
     s3_access_key: str = "ai_assistant"
     s3_secret_key: str = "ai_assistant_minio"
     s3_bucket: str = "documents"
-    embedding_provider: str = "openai"  # which configured provider's embedding model to use
-    embedding_model: str = "text-embedding-3-small"
-    embedding_dimensions: int = 1536
+    # Defaults to gemini: the "openai" provider slot is routed through OpenRouter for free-tier
+    # chat testing, and OpenRouter does not expose an embeddings endpoint.
+    embedding_provider: str = "gemini"
+    embedding_model: str = "gemini-embedding-001"
+    embedding_dimensions: int = 768
 
     # CORS
     cors_origins: str = "http://localhost:3000"
