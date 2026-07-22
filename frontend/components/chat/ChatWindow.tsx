@@ -5,6 +5,7 @@ import { Settings } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { getConversation } from "@/lib/api/conversations";
+import { setMessageFeedback } from "@/lib/api/messages";
 import { editMessage, regenerateMessage, streamMessage } from "@/lib/api/stream";
 import type { Message } from "@/lib/types";
 
@@ -159,6 +160,12 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
     );
   };
 
+  const handleFeedback = (messageId: string, feedback: "up" | "down" | null) => {
+    setMessageFeedback(conversationId, messageId, feedback).then(() => {
+      queryClient.invalidateQueries({ queryKey: ["conversation", conversationId] });
+    });
+  };
+
   const handleStop = () => {
     abortRef.current?.abort();
     setIsSending(false);
@@ -199,6 +206,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
         streamingContent={streamingContent}
         onRegenerate={!isSending ? handleRegenerate : undefined}
         onEditMessage={!isSending ? handleEditMessage : undefined}
+        onFeedback={handleFeedback}
       />
       {error && (
         <div className="mx-auto max-w-3xl w-full px-4 pb-1 flex items-center gap-3 text-sm text-red-500">

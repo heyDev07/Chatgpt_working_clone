@@ -12,7 +12,7 @@ from app.db.database import async_session_factory
 from app.middleware.rate_limit import message_rate_limiter
 from app.models.user import User
 from app.providers.provider_manager import ProviderManager
-from app.schemas.message import MessageCreate
+from app.schemas.message import MessageCreate, MessageFeedbackUpdate, MessageOut
 from app.services.chat_service import ChatService
 
 router = APIRouter(prefix="/conversations", tags=["messages"])
@@ -82,6 +82,20 @@ async def edit_message(
         event_stream(),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@router.patch("/{conversation_id}/messages/{message_id}", response_model=MessageOut)
+async def update_message_feedback(
+    conversation_id: uuid.UUID,
+    message_id: uuid.UUID,
+    payload: MessageFeedbackUpdate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    provider_manager: ProviderManager = Depends(get_provider_manager),
+):
+    return await ChatService(db, provider_manager).set_message_feedback(
+        conversation_id, current_user.id, message_id, payload.feedback
     )
 
 

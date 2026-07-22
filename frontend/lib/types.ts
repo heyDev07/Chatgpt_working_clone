@@ -36,6 +36,7 @@ export interface Message {
   token_count: number | null;
   model: string | null;
   finish_reason: string | null;
+  feedback?: "up" | "down" | null;
   created_at: string;
 }
 

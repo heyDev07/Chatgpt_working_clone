@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Copy, Pencil, RotateCw, Sparkles } from "lucide-react";
+import { Check, Copy, Pencil, RotateCw, Sparkles, ThumbsDown, ThumbsUp } from "lucide-react";
 import { useState, type KeyboardEvent } from "react";
 
 import type { Message } from "@/lib/types";
@@ -13,11 +13,13 @@ export function MessageBubble({
   isStreaming,
   onRegenerate,
   onEdit,
+  onFeedback,
 }: {
   message: Message;
   isStreaming?: boolean;
   onRegenerate?: () => void;
   onEdit?: (content: string) => void;
+  onFeedback?: (feedback: "up" | "down" | null) => void;
 }) {
   const isUser = message.role === "user";
   const [copied, setCopied] = useState(false);
@@ -117,7 +119,11 @@ export function MessageBubble({
           {isStreaming && <StreamingCursor />}
         </div>
         {!isStreaming && message.content && (
-          <div className="mt-1 flex items-center gap-3 opacity-0 group-hover:opacity-100">
+          <div
+            className={`mt-1 flex items-center gap-3 group-hover:opacity-100 ${
+              message.feedback ? "opacity-100" : "opacity-0"
+            }`}
+          >
             <button
               onClick={handleCopy}
               aria-label="Copy message"
@@ -135,6 +141,32 @@ export function MessageBubble({
                 <RotateCw size={13} />
                 Regenerate
               </button>
+            )}
+            {onFeedback && (
+              <>
+                <button
+                  onClick={() => onFeedback(message.feedback === "up" ? null : "up")}
+                  aria-label="Good response"
+                  className={`text-xs ${
+                    message.feedback === "up"
+                      ? "text-blue-600 dark:text-blue-400"
+                      : "text-black/40 hover:text-black dark:text-white/40 dark:hover:text-white"
+                  }`}
+                >
+                  <ThumbsUp size={13} fill={message.feedback === "up" ? "currentColor" : "none"} />
+                </button>
+                <button
+                  onClick={() => onFeedback(message.feedback === "down" ? null : "down")}
+                  aria-label="Bad response"
+                  className={`text-xs ${
+                    message.feedback === "down"
+                      ? "text-red-500"
+                      : "text-black/40 hover:text-black dark:text-white/40 dark:hover:text-white"
+                  }`}
+                >
+                  <ThumbsDown size={13} fill={message.feedback === "down" ? "currentColor" : "none"} />
+                </button>
+              </>
             )}
           </div>
         )}

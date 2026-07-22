@@ -30,6 +30,17 @@ class ChatService:
             raise NotFoundError("Conversation not found")
         return conversation
 
+    async def set_message_feedback(
+        self, conversation_id: uuid.UUID, user_id: uuid.UUID, message_id: uuid.UUID, feedback: str | None
+    ) -> Message:
+        conversation = await self.get_authorized_conversation(conversation_id, user_id)
+        message = await self.messages.get_by_id(message_id, conversation.id)
+        if not message or message.role != "assistant":
+            raise NotFoundError("Message not found")
+        message = await self.messages.set_feedback(message, feedback)
+        await self.db.commit()
+        return message
+
     async def stream_message(
         self, conversation_id: uuid.UUID, user_id: uuid.UUID, content: str
     ) -> AsyncIterator[dict]:

@@ -59,3 +59,8 @@ class MessageRepository:
             )
         )
         await self.db.flush()
+
+    async def set_feedback(self, message: Message, feedback: str | None) -> Message:
+        message.feedback = feedback
+        await self.db.flush()
+        return message
