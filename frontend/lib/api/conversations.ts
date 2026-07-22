@@ -1,8 +1,12 @@
 import { apiFetch } from "@/lib/api/client";
 import type { Conversation, ConversationDetail } from "@/lib/types";
 
-export function listConversations(): Promise<Conversation[]> {
-  return apiFetch<Conversation[]>("/conversations");
+export function listConversations(options?: { archived?: boolean; search?: string }): Promise<Conversation[]> {
+  const params = new URLSearchParams();
+  if (options?.archived) params.set("archived", "true");
+  if (options?.search) params.set("search", options.search);
+  const query = params.toString();
+  return apiFetch<Conversation[]>(`/conversations${query ? `?${query}` : ""}`);
 }
 
 export function createConversation(title?: string): Promise<Conversation> {
@@ -14,6 +18,16 @@ export function createConversation(title?: string): Promise<Conversation> {
 
 export function getConversation(id: string): Promise<ConversationDetail> {
   return apiFetch<ConversationDetail>(`/conversations/${id}`);
+}
+
+export function updateConversation(
+  id: string,
+  updates: { title?: string; is_pinned?: boolean; is_archived?: boolean }
+): Promise<Conversation> {
+  return apiFetch<Conversation>(`/conversations/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(updates),
+  });
 }
 
 export function deleteConversation(id: string): Promise<void> {

@@ -6,7 +6,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_user, get_db, get_provider_manager
 from app.models.user import User
 from app.providers.provider_manager import ProviderManager
-from app.schemas.conversation import ConversationCreate, ConversationDetailOut, ConversationOut
+from app.schemas.conversation import (
+    ConversationCreate,
+    ConversationDetailOut,
+    ConversationOut,
+    ConversationUpdate,
+)
 from app.services.conversation_service import ConversationService
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
@@ -30,10 +35,12 @@ async def create_conversation(
 
 @router.get("", response_model=list[ConversationOut])
 async def list_conversations(
+    archived: bool = False,
+    search: str | None = None,
     current_user: User = Depends(get_current_user),
     service: ConversationService = Depends(_get_service),
 ):
-    return await service.list_for_user(current_user.id)
+    return await service.list_for_user(current_user.id, archived=archived, search=search)
 
 
 @router.get("/{conversation_id}", response_model=ConversationDetailOut)
@@ -43,6 +50,22 @@ async def get_conversation(
     service: ConversationService = Depends(_get_service),
 ):
     return await service.get_detail(conversation_id, current_user.id)
+
+
+@router.patch("/{conversation_id}", response_model=ConversationOut)
+async def update_conversation(
+    conversation_id: uuid.UUID,
+    payload: ConversationUpdate,
+    current_user: User = Depends(get_current_user),
+    service: ConversationService = Depends(_get_service),
+):
+    return await service.update(
+        conversation_id,
+        current_user.id,
+        title=payload.title,
+        is_pinned=payload.is_pinned,
+        is_archived=payload.is_archived,
+    )
 
 
 @router.delete("/{conversation_id}", status_code=204)

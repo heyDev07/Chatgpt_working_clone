@@ -29,13 +29,33 @@ class ConversationService:
         await self.db.commit()
         return conversation
 
-    async def list_for_user(self, user_id: uuid.UUID) -> list[Conversation]:
-        return await self.conversations.list_for_user(user_id)
+    async def list_for_user(
+        self, user_id: uuid.UUID, *, archived: bool = False, search: str | None = None
+    ) -> list[Conversation]:
+        return await self.conversations.list_for_user(user_id, archived=archived, search=search)
 
     async def get_detail(self, conversation_id: uuid.UUID, user_id: uuid.UUID) -> Conversation:
         conversation = await self.conversations.get_with_messages(conversation_id, user_id)
         if not conversation:
             raise NotFoundError("Conversation not found")
+        return conversation
+
+    async def update(
+        self,
+        conversation_id: uuid.UUID,
+        user_id: uuid.UUID,
+        *,
+        title: str | None = None,
+        is_pinned: bool | None = None,
+        is_archived: bool | None = None,
+    ) -> Conversation:
+        conversation = await self.conversations.get_for_user(conversation_id, user_id)
+        if not conversation:
+            raise NotFoundError("Conversation not found")
+        conversation = await self.conversations.update(
+            conversation, title=title, is_pinned=is_pinned, is_archived=is_archived
+        )
+        await self.db.commit()
         return conversation
 
     async def delete(self, conversation_id: uuid.UUID, user_id: uuid.UUID) -> None:

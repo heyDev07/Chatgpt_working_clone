@@ -12,6 +12,12 @@ class ConversationCreate(BaseModel):
     model: str | None = None
 
 
+class ConversationUpdate(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=255)
+    is_pinned: bool | None = None
+    is_archived: bool | None = None
+
+
 class ConversationOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -20,6 +26,7 @@ class ConversationOut(BaseModel):
     provider: str
     model: str
     is_archived: bool
+    is_pinned: bool
     created_at: datetime
     updated_at: datetime
 

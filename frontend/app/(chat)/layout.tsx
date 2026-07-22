@@ -1,7 +1,8 @@
 "use client";
 
+import { LogOut, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 import { ConversationList } from "@/components/sidebar/ConversationList";
 import { NewChatButton } from "@/components/sidebar/NewChatButton";
@@ -10,6 +11,7 @@ import { useAuth } from "@/lib/auth/AuthContext";
 export default function ChatLayout({ children }: { children: ReactNode }) {
   const { user, isLoading, logout } = useAuth();
   const router = useRouter();
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
   useEffect(() => {
     if (!isLoading && !user) {
@@ -19,8 +21,8 @@ export default function ChatLayout({ children }: { children: ReactNode }) {
 
   if (isLoading || !user) {
     return (
-      <main className="flex-1 flex items-center justify-center">
-        <p className="text-sm text-black/60 dark:text-white/60">Loading...</p>
+      <main className="flex-1 flex items-center justify-center bg-white dark:bg-[#212121]">
+        <p className="text-sm text-black/40 dark:text-white/40">Loading...</p>
       </main>
     );
   }
@@ -30,23 +32,61 @@ export default function ChatLayout({ children }: { children: ReactNode }) {
     router.push("/login");
   };
 
+  const initials = (user.full_name || user.email).slice(0, 1).toUpperCase();
+
   return (
-    <div className="flex flex-1 overflow-hidden">
-      <aside className="w-64 flex-shrink-0 border-r border-black/10 dark:border-white/10 flex flex-col p-3 gap-3">
-        <NewChatButton />
-        <div className="flex-1 overflow-y-auto">
-          <ConversationList />
-        </div>
-        <div className="border-t border-black/10 dark:border-white/10 pt-3 flex items-center justify-between gap-2">
-          <span className="text-sm truncate">{user.full_name || user.email}</span>
-          <button
-            onClick={handleLogout}
-            className="text-xs text-black/50 hover:text-black dark:text-white/50 dark:hover:text-white flex-shrink-0"
-          >
-            Log out
-          </button>
+    <div className="relative flex flex-1 overflow-hidden bg-white dark:bg-[#212121]">
+      <aside
+        className={`flex-shrink-0 bg-neutral-50 dark:bg-[#171717] flex flex-col overflow-hidden transition-[width] duration-200 ease-in-out ${
+          isSidebarOpen ? "w-64" : "w-0"
+        }`}
+      >
+        {/* Fixed-width inner wrapper: the outer <aside> animates width and clips via
+            overflow-hidden, so content is clipped during the slide rather than reflowing. */}
+        <div className="flex h-full w-64 flex-col p-2 gap-2">
+          <div className="flex items-center gap-1">
+            <div className="flex-1 min-w-0">
+              <NewChatButton />
+            </div>
+            <button
+              onClick={() => setIsSidebarOpen(false)}
+              aria-label="Collapse sidebar"
+              className="flex-shrink-0 rounded-lg p-2 text-black/50 hover:bg-black/5 dark:text-white/50 dark:hover:bg-white/10"
+            >
+              <PanelLeftClose size={18} />
+            </button>
+          </div>
+          <div className="flex-1 overflow-hidden px-1">
+            <ConversationList />
+          </div>
+          <div className="border-t border-black/10 dark:border-white/10 pt-2 flex items-center gap-2 px-1 py-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/5">
+            <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-blue-600 text-xs font-medium text-white">
+              {initials}
+            </div>
+            <span className="flex-1 truncate text-sm text-black/80 dark:text-white/80">
+              {user.full_name || user.email}
+            </span>
+            <button
+              onClick={handleLogout}
+              aria-label="Log out"
+              className="flex-shrink-0 text-black/40 hover:text-black dark:text-white/40 dark:hover:text-white"
+            >
+              <LogOut size={15} />
+            </button>
+          </div>
         </div>
       </aside>
+
+      {!isSidebarOpen && (
+        <button
+          onClick={() => setIsSidebarOpen(true)}
+          aria-label="Expand sidebar"
+          className="absolute left-2 top-2 z-10 rounded-lg p-2 text-black/50 hover:bg-black/5 dark:text-white/50 dark:hover:bg-white/10"
+        >
+          <PanelLeftOpen size={18} />
+        </button>
+      )}
+
       <div className="flex flex-1 flex-col overflow-hidden">{children}</div>
     </div>
   );

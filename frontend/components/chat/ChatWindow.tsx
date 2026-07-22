@@ -98,7 +98,9 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden">
       <MessageList messages={messages} streamingContent={streamingContent} />
-      {error && <p className="px-4 py-2 text-sm text-red-500">{error}</p>}
+      {error && (
+        <p className="mx-auto max-w-3xl w-full px-4 pb-1 text-sm text-red-500">{error}</p>
+      )}
       <Composer onSend={handleSend} onStop={handleStop} disabled={isSending} />
     </div>
   );
