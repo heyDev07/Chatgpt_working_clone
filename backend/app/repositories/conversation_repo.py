@@ -19,11 +19,18 @@ class ConversationRepository:
         return conversation
 
     async def list_for_user(
-        self, user_id: uuid.UUID, *, archived: bool = False, search: str | None = None
+        self,
+        user_id: uuid.UUID,
+        *,
+        archived: bool = False,
+        search: str | None = None,
+        folder_id: uuid.UUID | None = None,
     ) -> list[Conversation]:
         query = select(Conversation).where(
             Conversation.user_id == user_id, Conversation.is_archived.is_(archived)
         )
+        if folder_id is not None:
+            query = query.where(Conversation.folder_id == folder_id)
         if search:
             pattern = f"%{search}%"
             query = query.where(
@@ -92,6 +99,14 @@ class ConversationRepository:
         # updated_at has onupdate=func.now() (server-computed) - without an explicit refresh,
         # accessing it after this method returns triggers a lazy-reload outside the awaited
         # async context (MissingGreenlet), since serialization happens after the route returns.
+        await self.db.refresh(conversation)
+        return conversation
+
+    async def set_folder(self, conversation: Conversation, folder_id: uuid.UUID | None) -> Conversation:
+        # A dedicated method (rather than folding this into update()'s "None means don't touch"
+        # convention) because None is a meaningful value here - it means "remove from folder".
+        conversation.folder_id = folder_id
+        await self.db.flush()
         await self.db.refresh(conversation)
         return conversation
 

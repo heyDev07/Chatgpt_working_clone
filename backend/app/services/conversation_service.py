@@ -6,12 +6,14 @@ from app.core.exceptions import NotFoundError
 from app.models.conversation import Conversation
 from app.providers.provider_manager import ProviderManager
 from app.repositories.conversation_repo import ConversationRepository
+from app.repositories.folder_repo import FolderRepository
 
 
 class ConversationService:
     def __init__(self, db: AsyncSession, provider_manager: ProviderManager):
         self.db = db
         self.conversations = ConversationRepository(db)
+        self.folders = FolderRepository(db)
         self.provider_manager = provider_manager
 
     async def create(
@@ -30,9 +32,30 @@ class ConversationService:
         return conversation
 
     async def list_for_user(
-        self, user_id: uuid.UUID, *, archived: bool = False, search: str | None = None
+        self,
+        user_id: uuid.UUID,
+        *,
+        archived: bool = False,
+        search: str | None = None,
+        folder_id: uuid.UUID | None = None,
     ) -> list[Conversation]:
-        return await self.conversations.list_for_user(user_id, archived=archived, search=search)
+        return await self.conversations.list_for_user(
+            user_id, archived=archived, search=search, folder_id=folder_id
+        )
+
+    async def set_folder(
+        self, conversation_id: uuid.UUID, user_id: uuid.UUID, folder_id: uuid.UUID | None
+    ) -> Conversation:
+        conversation = await self.conversations.get_for_user(conversation_id, user_id)
+        if not conversation:
+            raise NotFoundError("Conversation not found")
+        if folder_id is not None:
+            folder = await self.folders.get_for_user(folder_id, user_id)
+            if not folder:
+                raise NotFoundError("Folder not found")
+        conversation = await self.conversations.set_folder(conversation, folder_id)
+        await self.db.commit()
+        return conversation
 
     async def get_detail(self, conversation_id: uuid.UUID, user_id: uuid.UUID) -> Conversation:
         conversation = await self.conversations.get_with_messages(conversation_id, user_id)

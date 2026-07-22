@@ -1,12 +1,13 @@
 "use client";
 
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Archive, ArchiveRestore, Pencil, Pin, PinOff, Trash2 } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Archive, ArchiveRestore, FolderInput, Pencil, Pin, PinOff, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useState, type KeyboardEvent } from "react";
+import { useState, type ChangeEvent, type KeyboardEvent } from "react";
 
-import { deleteConversation, updateConversation } from "@/lib/api/conversations";
+import { deleteConversation, setConversationFolder, updateConversation } from "@/lib/api/conversations";
+import { listFolders } from "@/lib/api/folders";
 import type { Conversation } from "@/lib/types";
 
 export function ConversationItem({ conversation }: { conversation: Conversation }) {
@@ -17,6 +18,9 @@ export function ConversationItem({ conversation }: { conversation: Conversation 
 
   const [isRenaming, setIsRenaming] = useState(false);
   const [titleDraft, setTitleDraft] = useState(conversation.title);
+  const [isMovingFolder, setIsMovingFolder] = useState(false);
+
+  const { data: folders } = useQuery({ queryKey: ["folders"], queryFn: listFolders, enabled: isMovingFolder });
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ["conversations"] });
 
@@ -46,6 +50,16 @@ export function ConversationItem({ conversation }: { conversation: Conversation 
     onSuccess: invalidate,
   });
 
+  const { mutate: moveToFolder } = useMutation({
+    mutationFn: (folderId: string | null) => setConversationFolder(conversation.id, folderId),
+    onSuccess: invalidate,
+  });
+
+  const handleFolderChange = (e: ChangeEvent<HTMLSelectElement>) => {
+    setIsMovingFolder(false);
+    moveToFolder(e.target.value || null);
+  };
+
   const commitRename = () => {
     const trimmed = titleDraft.trim();
     setIsRenaming(false);
@@ -74,6 +88,25 @@ export function ConversationItem({ conversation }: { conversation: Conversation 
         onBlur={commitRename}
         className="w-full rounded-lg bg-black/5 dark:bg-white/10 px-3 py-2 text-sm outline-none ring-1 ring-blue-500"
       />
+    );
+  }
+
+  if (isMovingFolder) {
+    return (
+      <select
+        autoFocus
+        defaultValue={conversation.folder_id ?? ""}
+        onChange={handleFolderChange}
+        onBlur={() => setIsMovingFolder(false)}
+        className="w-full rounded-lg bg-black/5 dark:bg-white/10 px-3 py-2 text-sm outline-none ring-1 ring-blue-500"
+      >
+        <option value="">No folder</option>
+        {folders?.map((folder) => (
+          <option key={folder.id} value={folder.id}>
+            {folder.name}
+          </option>
+        ))}
+      </select>
     );
   }
 
@@ -108,6 +141,16 @@ export function ConversationItem({ conversation }: { conversation: Conversation 
           className="text-black/40 hover:text-black dark:text-white/40 dark:hover:text-white"
         >
           <Pencil size={14} />
+        </button>
+        <button
+          onClick={(e) => {
+            e.preventDefault();
+            setIsMovingFolder(true);
+          }}
+          aria-label="Move to folder"
+          className="text-black/40 hover:text-black dark:text-white/40 dark:hover:text-white"
+        >
+          <FolderInput size={14} />
         </button>
         <button
           onClick={(e) => {

@@ -7,17 +7,18 @@ import { useState } from "react";
 import { ConversationItem } from "@/components/sidebar/ConversationItem";
 import { listConversations } from "@/lib/api/conversations";
 
-export function ConversationList() {
+export function ConversationList({ folderId }: { folderId: string | null }) {
   const [search, setSearch] = useState("");
   const [showArchived, setShowArchived] = useState(false);
 
   const { data: conversations, isLoading } = useQuery({
-    queryKey: ["conversations", { archived: showArchived, search }],
-    queryFn: () => listConversations({ archived: showArchived, search: search || undefined }),
+    queryKey: ["conversations", { archived: showArchived, search, folderId }],
+    queryFn: () =>
+      listConversations({ archived: showArchived, search: search || undefined, folderId: folderId || undefined }),
   });
 
   return (
-    <div className="flex flex-col gap-1 h-full">
+    <div className="flex flex-col gap-1">
       <div className="relative px-1 pb-1">
         <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-black/40 dark:text-white/40" />
         <input
@@ -40,11 +41,17 @@ export function ConversationList() {
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto flex flex-col gap-0.5 px-1">
+      <div className="flex flex-col gap-0.5 px-1">
         {isLoading && <p className="px-3 py-2 text-sm text-black/40 dark:text-white/40">Loading...</p>}
         {!isLoading && (!conversations || conversations.length === 0) && (
           <p className="px-3 py-2 text-sm text-black/40 dark:text-white/40">
-            {search ? "No matching chats" : showArchived ? "No archived chats" : "No conversations yet"}
+            {search
+              ? "No matching chats"
+              : showArchived
+                ? "No archived chats"
+                : folderId
+                  ? "No chats in this folder"
+                  : "No conversations yet"}
           </p>
         )}
         {conversations?.map((conversation) => (

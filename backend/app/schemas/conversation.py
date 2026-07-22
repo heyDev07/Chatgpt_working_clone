@@ -28,6 +28,7 @@ class ConversationOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
+    folder_id: uuid.UUID | None
     title: str
     provider: str
     model: str

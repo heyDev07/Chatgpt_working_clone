@@ -7,6 +7,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { DocumentManager } from "@/components/documents/DocumentManager";
 import { MemoryManager } from "@/components/memory/MemoryManager";
 import { ConversationList } from "@/components/sidebar/ConversationList";
+import { FolderList } from "@/components/sidebar/FolderList";
 import { NewChatButton } from "@/components/sidebar/NewChatButton";
 import { useAuth } from "@/lib/auth/AuthContext";
 
@@ -16,6 +17,7 @@ export default function ChatLayout({ children }: { children: ReactNode }) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [showMemories, setShowMemories] = useState(false);
   const [showDocuments, setShowDocuments] = useState(false);
+  const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isLoading && !user) {
@@ -60,8 +62,9 @@ export default function ChatLayout({ children }: { children: ReactNode }) {
               <PanelLeftClose size={18} />
             </button>
           </div>
-          <div className="flex-1 overflow-hidden px-1">
-            <ConversationList />
+          <div className="flex-1 overflow-y-auto flex flex-col gap-2 px-1">
+            <FolderList selectedFolderId={selectedFolderId} onSelect={setSelectedFolderId} />
+            <ConversationList folderId={selectedFolderId} />
           </div>
           <button
             onClick={() => setShowDocuments(true)}

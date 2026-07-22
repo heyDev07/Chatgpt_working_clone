@@ -1,10 +1,15 @@
 import { apiFetch } from "@/lib/api/client";
 import type { Conversation, ConversationDetail } from "@/lib/types";
 
-export function listConversations(options?: { archived?: boolean; search?: string }): Promise<Conversation[]> {
+export function listConversations(options?: {
+  archived?: boolean;
+  search?: string;
+  folderId?: string;
+}): Promise<Conversation[]> {
   const params = new URLSearchParams();
   if (options?.archived) params.set("archived", "true");
   if (options?.search) params.set("search", options.search);
+  if (options?.folderId) params.set("folder_id", options.folderId);
   const query = params.toString();
   return apiFetch<Conversation[]>(`/conversations${query ? `?${query}` : ""}`);
 }
@@ -41,4 +46,11 @@ export function updateConversation(id: string, updates: ConversationUpdatePayloa
 
 export function deleteConversation(id: string): Promise<void> {
   return apiFetch<void>(`/conversations/${id}`, { method: "DELETE" });
+}
+
+export function setConversationFolder(id: string, folderId: string | null): Promise<Conversation> {
+  return apiFetch<Conversation>(`/conversations/${id}/folder`, {
+    method: "PATCH",
+    body: JSON.stringify({ folder_id: folderId }),
+  });
 }

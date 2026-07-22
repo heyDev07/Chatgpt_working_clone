@@ -15,6 +15,7 @@ export interface TokenResponse {
 
 export interface Conversation {
   id: string;
+  folder_id: string | null;
   title: string;
   provider: string;
   model: string;

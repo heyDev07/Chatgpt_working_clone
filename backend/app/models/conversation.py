@@ -17,6 +17,9 @@ class Conversation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
+    folder_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("folders.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     title: Mapped[str] = mapped_column(String(255), nullable=False, default="New Conversation")
     provider: Mapped[str] = mapped_column(String(50), nullable=False, default="openai")
     model: Mapped[str] = mapped_column(String(100), nullable=False)

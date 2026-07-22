@@ -12,6 +12,7 @@ from app.schemas.conversation import (
     ConversationOut,
     ConversationUpdate,
 )
+from app.schemas.folder import ConversationFolderUpdate
 from app.services.conversation_service import ConversationService
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
@@ -37,10 +38,11 @@ async def create_conversation(
 async def list_conversations(
     archived: bool = False,
     search: str | None = None,
+    folder_id: uuid.UUID | None = None,
     current_user: User = Depends(get_current_user),
     service: ConversationService = Depends(_get_service),
 ):
-    return await service.list_for_user(current_user.id, archived=archived, search=search)
+    return await service.list_for_user(current_user.id, archived=archived, search=search, folder_id=folder_id)
 
 
 @router.get("/{conversation_id}", response_model=ConversationDetailOut)
@@ -72,6 +74,16 @@ async def update_conversation(
         max_tokens=payload.max_tokens,
         top_p=payload.top_p,
     )
+
+
+@router.patch("/{conversation_id}/folder", response_model=ConversationOut)
+async def set_conversation_folder(
+    conversation_id: uuid.UUID,
+    payload: ConversationFolderUpdate,
+    current_user: User = Depends(get_current_user),
+    service: ConversationService = Depends(_get_service),
+):
+    return await service.set_folder(conversation_id, current_user.id, payload.folder_id)
 
 
 @router.delete("/{conversation_id}", status_code=204)
