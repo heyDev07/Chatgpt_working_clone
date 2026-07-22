@@ -1,11 +1,15 @@
 import uuid
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, UUIDPrimaryKeyMixin
+
+if TYPE_CHECKING:
+    from app.models.conversation import Conversation
 
 
 class Message(UUIDPrimaryKeyMixin, Base):
@@ -21,3 +25,5 @@ class Message(UUIDPrimaryKeyMixin, Base):
     model: Mapped[str | None] = mapped_column(String(100), nullable=True)
     finish_reason: Mapped[str | None] = mapped_column(String(50), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    conversation: Mapped["Conversation"] = relationship(back_populates="messages")

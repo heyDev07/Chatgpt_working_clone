@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
+from app import models  # noqa: F401 - ensures all models are registered before relationships resolve
 from app.config.settings import get_settings
 from app.db.database import engine
 from app.db.redis_client import get_redis
