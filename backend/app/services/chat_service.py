@@ -1,3 +1,4 @@
+import asyncio
 import uuid
 from collections.abc import AsyncIterator
 
@@ -11,6 +12,7 @@ from app.providers.base_provider import ChatMessage
 from app.providers.provider_manager import ProviderManager
 from app.repositories.conversation_repo import ConversationRepository
 from app.repositories.message_repo import MessageRepository
+from app.services.memory_extraction import run_memory_extraction
 
 
 class ChatService:
@@ -188,6 +190,22 @@ class ChatService:
         if error_message:
             yield {"event": "error", "data": {"code": "provider_error", "message": error_message}}
             return
+
+        # Fire-and-forget: analyze this exchange for a durable memory worth keeping. Only on a
+        # clean completion (not a cancelled/partial reply) - a truncated exchange is a weak
+        # signal and more likely to produce a garbled extraction. Uses its own DB session (see
+        # memory_extraction.py) since it outlives this request/generator.
+        if assistant_message and finish_reason == "stop" and history and history[-1].role == "user":
+            asyncio.create_task(
+                run_memory_extraction(
+                    self.provider_manager,
+                    conversation.user_id,
+                    conversation.provider,
+                    conversation.model,
+                    history[-1].content,
+                    full_content,
+                )
+            )
 
         yield {
             "event": "done",
