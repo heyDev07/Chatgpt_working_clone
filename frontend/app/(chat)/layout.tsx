@@ -1,9 +1,10 @@
 "use client";
 
-import { BrainCog, LogOut, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { BrainCog, FolderOpen, LogOut, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 
+import { DocumentManager } from "@/components/documents/DocumentManager";
 import { MemoryManager } from "@/components/memory/MemoryManager";
 import { ConversationList } from "@/components/sidebar/ConversationList";
 import { NewChatButton } from "@/components/sidebar/NewChatButton";
@@ -14,6 +15,7 @@ export default function ChatLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [showMemories, setShowMemories] = useState(false);
+  const [showDocuments, setShowDocuments] = useState(false);
 
   useEffect(() => {
     if (!isLoading && !user) {
@@ -62,6 +64,13 @@ export default function ChatLayout({ children }: { children: ReactNode }) {
             <ConversationList />
           </div>
           <button
+            onClick={() => setShowDocuments(true)}
+            className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-black/70 hover:bg-black/5 dark:text-white/70 dark:hover:bg-white/10"
+          >
+            <FolderOpen size={16} />
+            Knowledge base
+          </button>
+          <button
             onClick={() => setShowMemories(true)}
             className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-black/70 hover:bg-black/5 dark:text-white/70 dark:hover:bg-white/10"
           >
@@ -99,6 +108,7 @@ export default function ChatLayout({ children }: { children: ReactNode }) {
       <div className="flex flex-1 flex-col overflow-hidden">{children}</div>
 
       {showMemories && <MemoryManager onClose={() => setShowMemories(false)} />}
+      {showDocuments && <DocumentManager onClose={() => setShowDocuments(false)} />}
     </div>
   );
 }
