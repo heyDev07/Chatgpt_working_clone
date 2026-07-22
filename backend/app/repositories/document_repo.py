@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.document import Document
@@ -36,6 +36,14 @@ class DocumentRepository:
             select(Document).where(Document.id == document_id, Document.user_id == user_id)
         )
         return result.scalar_one_or_none()
+
+    async def has_ready_documents(self, user_id: uuid.UUID) -> bool:
+        result = await self.db.execute(
+            select(func.count())
+            .select_from(Document)
+            .where(Document.user_id == user_id, Document.status == "ready")
+        )
+        return (result.scalar_one() or 0) > 0
 
     async def set_status(
         self, document: Document, status: str, *, chunk_count: int | None = None, error_message: str | None = None

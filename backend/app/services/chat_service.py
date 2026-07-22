@@ -6,6 +6,7 @@ from collections.abc import AsyncIterator
 import anyio
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config.settings import get_settings
 from app.core.exceptions import NotFoundError, ProviderError
 from app.models.conversation import Conversation
 from app.models.message import Message
@@ -13,11 +14,18 @@ from app.providers.base_provider import ChatMessage
 from app.providers.provider_manager import ProviderManager
 from app.repositories.conversation_repo import ConversationRepository
 from app.repositories.conversation_summary_repo import ConversationSummaryRepository
+from app.repositories.document_repo import DocumentRepository
 from app.repositories.memory_repo import MemoryRepository
 from app.repositories.message_repo import MessageRepository
 from app.services.memory_extraction import run_memory_extraction
+from app.vectorstore.qdrant_client import search as search_document_chunks
 
 logger = logging.getLogger("app.summarization")
+
+# Chunks scored below this cosine-similarity threshold are treated as noise rather than
+# genuinely relevant context and left out of the prompt.
+RETRIEVAL_SCORE_THRESHOLD = 0.5
+RETRIEVAL_TOP_K = 5
 
 # Once a conversation exceeds this many messages, older ones are collapsed into a running
 # summary and only the most recent RECENT_MESSAGE_COUNT are sent verbatim - keeps token usage
@@ -40,6 +48,7 @@ class ChatService:
         self.messages = MessageRepository(db)
         self.memories = MemoryRepository(db)
         self.summaries = ConversationSummaryRepository(db)
+        self.documents = DocumentRepository(db)
         self.provider_manager = provider_manager
 
     async def get_authorized_conversation(
@@ -181,6 +190,42 @@ class ChatService:
             logger.exception("Summarization failed for conversation %s, using full history", conversation.id)
             return history, None
 
+    async def _retrieve_document_context(
+        self, user_id: uuid.UUID, query_text: str
+    ) -> tuple[str | None, list[dict]]:
+        """Best-effort RAG retrieval over the user's uploaded documents. Never raises - an
+        embedding-provider outage or empty knowledge base should degrade to a normal chat
+        reply, not break the turn. Returns (prompt text block, source citations for the
+        client) or (None, []) when nothing relevant was found."""
+        settings = get_settings()
+        try:
+            # Skip the embedding call entirely when the user has no processed documents -
+            # avoids an API round-trip on every chat turn for users not using RAG at all.
+            if not await self.documents.has_ready_documents(user_id):
+                return None, []
+
+            provider = self.provider_manager.get_provider(settings.embedding_provider)
+            vectors = await provider.embed_texts(
+                [query_text], settings.embedding_model, output_dimensionality=settings.embedding_dimensions
+            )
+            if not vectors or not vectors[0]:
+                return None, []
+
+            results = await search_document_chunks(user_id, vectors[0], limit=RETRIEVAL_TOP_K)
+            relevant = [(payload, score) for payload, score in results if score >= RETRIEVAL_SCORE_THRESHOLD]
+            if not relevant:
+                return None, []
+
+            excerpts = "\n\n".join(f"[Source: {payload['filename']}]\n{payload['text']}" for payload, _ in relevant)
+            citations = [
+                {"filename": payload["filename"], "document_id": payload["document_id"], "score": score}
+                for payload, score in relevant
+            ]
+            return excerpts, citations
+        except Exception:
+            logger.exception("Document retrieval failed for user %s, continuing without it", user_id)
+            return None, []
+
     async def _generate_and_persist(
         self, conversation: Conversation, history: list[Message]
     ) -> AsyncIterator[dict]:
@@ -211,6 +256,24 @@ class ChatService:
             chat_messages.append(
                 ChatMessage(role="system", content=f"Summary of earlier conversation:\n{summary_text}")
             )
+
+        citations: list[dict] = []
+        if history and history[-1].role == "user":
+            document_context, citations = await self._retrieve_document_context(
+                conversation.user_id, history[-1].content
+            )
+            if document_context:
+                chat_messages.append(
+                    ChatMessage(
+                        role="system",
+                        content=(
+                            "Relevant excerpts from the user's uploaded documents. Use them to "
+                            "answer if helpful and cite the source filename when you do; if they "
+                            "aren't relevant to the question, ignore them and answer normally.\n\n"
+                            f"{document_context}"
+                        ),
+                    )
+                )
 
         chat_messages.extend(ChatMessage(role=m.role, content=m.content) for m in effective_history)
 
@@ -298,5 +361,6 @@ class ChatService:
                     if usage
                     else None
                 ),
+                "citations": citations,
             },
         }
