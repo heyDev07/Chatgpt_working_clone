@@ -110,3 +110,11 @@ class OpenAIProvider(BaseProvider):
             return True
         except Exception:
             return False
+
+    async def embed_texts(self, texts: list[str], model: str, **kwargs) -> list[list[float]]:
+        try:
+            response = await self._client.embeddings.create(input=texts, model=model, **kwargs)
+        except Exception as exc:
+            raise ProviderError(f"OpenAI embed_texts failed: {exc}") from exc
+        # API guarantees results are returned in the same order as the input list.
+        return [item.embedding for item in response.data]

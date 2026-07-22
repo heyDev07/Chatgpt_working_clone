@@ -147,3 +147,14 @@ class GeminiProvider(BaseProvider):
             return True
         except Exception:
             return False
+
+    async def embed_texts(self, texts: list[str], model: str, **kwargs) -> list[list[float]]:
+        config = types.EmbedContentConfig(**_translate_kwargs(kwargs)) if kwargs else None
+        try:
+            response = await self._client.aio.models.embed_content(
+                model=model, contents=texts, config=config
+            )
+        except Exception as exc:
+            raise ProviderError(f"Gemini embed_texts failed: {exc}") from exc
+        # API guarantees results are returned in the same order as the input list.
+        return [embedding.values or [] for embedding in (response.embeddings or [])]

@@ -24,6 +24,16 @@ class Settings(BaseSettings):
     default_openai_model: str = "gpt-4o-mini"
     default_gemini_model: str = "gemini-2.0-flash"
 
+    # RAG: vector store + object storage
+    qdrant_url: str = "http://localhost:6333"
+    s3_endpoint_url: str = "http://localhost:9000"
+    s3_access_key: str = "ai_assistant"
+    s3_secret_key: str = "ai_assistant_minio"
+    s3_bucket: str = "documents"
+    embedding_provider: str = "openai"  # which configured provider's embedding model to use
+    embedding_model: str = "text-embedding-3-small"
+    embedding_dimensions: int = 1536
+
     # CORS
     cors_origins: str = "http://localhost:3000"
 

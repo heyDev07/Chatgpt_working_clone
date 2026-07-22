@@ -35,3 +35,8 @@ class RateLimitError(AppError):
 class ProviderError(AppError):
     status_code = 502
     code = "provider_error"
+
+
+class StorageError(AppError):
+    status_code = 502
+    code = "storage_error"

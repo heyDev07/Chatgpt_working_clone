@@ -15,5 +15,10 @@ google-genai==2.13.0
 tiktoken==0.8.0
 httpx==0.28.1
 python-multipart==0.0.20
+aioboto3==13.3.0
+qdrant-client==1.12.1
+pypdf==5.1.0
+python-docx==1.1.2
+openpyxl==3.1.5
 pytest==8.3.4
 pytest-asyncio==0.25.0

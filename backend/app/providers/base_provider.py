@@ -62,3 +62,6 @@ class BaseProvider(ABC):
 
     @abstractmethod
     async def health_check(self) -> bool: ...
+
+    @abstractmethod
+    async def embed_texts(self, texts: list[str], model: str, **kwargs) -> list[list[float]]: ...

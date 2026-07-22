@@ -12,6 +12,7 @@ from app.db.database import engine
 from app.db.redis_client import get_redis
 from app.middleware.error_handler import register_error_handlers
 from app.middleware.request_logging import RequestLoggingMiddleware
+from app.storage.s3_client import ensure_bucket_exists
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
@@ -22,6 +23,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await conn.execute(text("SELECT 1"))
     redis = get_redis()
     await redis.ping()
+    await ensure_bucket_exists()
 
     yield
 
