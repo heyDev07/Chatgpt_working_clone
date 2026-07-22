@@ -18,6 +18,7 @@ class Settings(BaseSettings):
 
     # LLM providers
     openai_api_key: str = ""
+    openai_base_url: str = ""  # override to point at an OpenAI-compatible endpoint (e.g. OpenRouter)
     gemini_api_key: str = ""
     default_llm_provider: str = "openai"
     default_openai_model: str = "gpt-4o-mini"

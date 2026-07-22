@@ -10,6 +10,7 @@ from app.core.exceptions import AuthError
 from app.db.database import get_db_session
 from app.db.redis_client import get_redis as _get_redis
 from app.models.user import User
+from app.providers.provider_manager import ProviderManager, get_provider_manager as _get_provider_manager
 from app.repositories.user_repo import UserRepository
 
 
@@ -19,6 +20,10 @@ async def get_db(session: AsyncSession = Depends(get_db_session)) -> AsyncIterat
 
 def get_redis() -> Redis:
     return _get_redis()
+
+
+def get_provider_manager() -> ProviderManager:
+    return _get_provider_manager()
 
 
 async def get_current_user(
