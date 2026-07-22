@@ -1,9 +1,10 @@
 "use client";
 
-import { LogOut, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { BrainCog, LogOut, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 
+import { MemoryManager } from "@/components/memory/MemoryManager";
 import { ConversationList } from "@/components/sidebar/ConversationList";
 import { NewChatButton } from "@/components/sidebar/NewChatButton";
 import { useAuth } from "@/lib/auth/AuthContext";
@@ -12,6 +13,7 @@ export default function ChatLayout({ children }: { children: ReactNode }) {
   const { user, isLoading, logout } = useAuth();
   const router = useRouter();
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [showMemories, setShowMemories] = useState(false);
 
   useEffect(() => {
     if (!isLoading && !user) {
@@ -59,6 +61,13 @@ export default function ChatLayout({ children }: { children: ReactNode }) {
           <div className="flex-1 overflow-hidden px-1">
             <ConversationList />
           </div>
+          <button
+            onClick={() => setShowMemories(true)}
+            className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-black/70 hover:bg-black/5 dark:text-white/70 dark:hover:bg-white/10"
+          >
+            <BrainCog size={16} />
+            Memories
+          </button>
           <div className="border-t border-black/10 dark:border-white/10 pt-2 flex items-center gap-2 px-1 py-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/5">
             <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-blue-600 text-xs font-medium text-white">
               {initials}
@@ -88,6 +97,8 @@ export default function ChatLayout({ children }: { children: ReactNode }) {
       )}
 
       <div className="flex flex-1 flex-col overflow-hidden">{children}</div>
+
+      {showMemories && <MemoryManager onClose={() => setShowMemories(false)} />}
     </div>
   );
 }
