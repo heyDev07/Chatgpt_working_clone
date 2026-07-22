@@ -1,6 +1,7 @@
 import uuid
 from collections.abc import AsyncIterator
 
+import anyio
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import NotFoundError, ProviderError
@@ -69,23 +70,30 @@ class ChatService:
         except ProviderError as exc:
             error_message = str(exc)
             finish_reason = "error"
-        except GeneratorExit:
-            # Client disconnected / stopped generation mid-stream.
+        except (GeneratorExit, anyio.get_cancelled_exc_class()):
+            # Client disconnected / stopped generation mid-stream. Starlette's
+            # BaseHTTPMiddleware (used by our request-logging middleware) cancels the whole
+            # request via a task cancellation on disconnect, not a plain GeneratorExit - so
+            # both must be handled the same way here.
             finish_reason = "cancelled"
             raise
         finally:
             assistant_message = None
             if full_content:
-                assistant_message = await self.messages.create(
-                    conversation.id,
-                    role="assistant",
-                    content=full_content,
-                    model=conversation.model,
-                    finish_reason=finish_reason,
-                    token_count=usage.completion_tokens if usage else None,
-                )
-                await self.conversations.touch(conversation)
-                await self.db.commit()
+                # The cleanup below must run even though the enclosing scope may already be
+                # cancelled (client disconnect) - without shielding, these awaits would be
+                # cancelled immediately too and the partial reply would never be saved.
+                with anyio.CancelScope(shield=True):
+                    assistant_message = await self.messages.create(
+                        conversation.id,
+                        role="assistant",
+                        content=full_content,
+                        model=conversation.model,
+                        finish_reason=finish_reason,
+                        token_count=usage.completion_tokens if usage else None,
+                    )
+                    await self.conversations.touch(conversation)
+                    await self.db.commit()
 
         if error_message:
             yield {"event": "error", "data": {"code": "provider_error", "message": error_message}}
