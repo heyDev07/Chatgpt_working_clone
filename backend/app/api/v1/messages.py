@@ -56,6 +56,35 @@ async def send_message(
     )
 
 
+@router.post("/{conversation_id}/messages/{message_id}/edit")
+async def edit_message(
+    conversation_id: uuid.UUID,
+    message_id: uuid.UUID,
+    payload: MessageCreate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    provider_manager: ProviderManager = Depends(get_provider_manager),
+    redis: Redis = Depends(get_redis),
+) -> StreamingResponse:
+    await message_rate_limiter.check(redis, identifier=str(current_user.id))
+
+    await ChatService(db, provider_manager).get_authorized_conversation(conversation_id, current_user.id)
+
+    async def event_stream() -> AsyncIterator[str]:
+        async with async_session_factory() as stream_db:
+            stream_service = ChatService(stream_db, provider_manager)
+            async for event in stream_service.edit_message(
+                conversation_id, current_user.id, message_id, payload.content
+            ):
+                yield _format_sse(event["event"], event["data"])
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
 @router.post("/{conversation_id}/regenerate")
 async def regenerate_message(
     conversation_id: uuid.UUID,

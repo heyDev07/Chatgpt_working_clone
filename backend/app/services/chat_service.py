@@ -78,6 +78,42 @@ class ChatService:
         async for event in self._generate_and_persist(conversation, history):
             yield event
 
+    async def edit_message(
+        self, conversation_id: uuid.UUID, user_id: uuid.UUID, message_id: uuid.UUID, content: str
+    ) -> AsyncIterator[dict]:
+        """Edits a previous user message and forks the conversation from that point: every
+        message after it (the old reply, and anything after a since-regenerated reply) is
+        discarded, then a new assistant reply is generated for the edited content."""
+        conversation = await self.conversations.get_for_user(conversation_id, user_id)
+        if not conversation:
+            yield {"event": "error", "data": {"code": "not_found", "message": "Conversation not found"}}
+            return
+
+        message = await self.messages.get_by_id(message_id, conversation.id)
+        if not message or message.role != "user":
+            yield {"event": "error", "data": {"code": "invalid_state", "message": "Message cannot be edited"}}
+            return
+
+        # Captured before mutating: whether this is the first message and whether the
+        # conversation's title was still auto-derived from its (about to change) old content,
+        # vs. one the user set manually - which we shouldn't clobber.
+        history_before = await self.messages.list_for_conversation(conversation.id)
+        is_first_message = bool(history_before) and history_before[0].id == message.id
+        title_was_auto = conversation.title in ("New Conversation", message.content[:50])
+
+        message.content = content
+        await self.messages.delete_after(conversation.id, message.created_at)
+        await self.db.commit()
+
+        if is_first_message and title_was_auto:
+            conversation.title = content[:50]
+            await self.db.commit()
+
+        history = await self.messages.list_for_conversation(conversation.id)
+
+        async for event in self._generate_and_persist(conversation, history):
+            yield event
+
     async def _generate_and_persist(
         self, conversation: Conversation, history: list[Message]
     ) -> AsyncIterator[dict]:

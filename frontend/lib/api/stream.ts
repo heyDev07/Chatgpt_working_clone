@@ -69,3 +69,18 @@ export function regenerateMessage(
     signal
   );
 }
+
+export function editMessage(
+  conversationId: string,
+  messageId: string,
+  content: string,
+  callbacks: StreamCallbacks,
+  signal: AbortSignal
+): Promise<void> {
+  return consumeStream(
+    `${API_BASE_URL}/conversations/${conversationId}/messages/${messageId}/edit`,
+    JSON.stringify({ content }),
+    callbacks,
+    signal
+  );
+}

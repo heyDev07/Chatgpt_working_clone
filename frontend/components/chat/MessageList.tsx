@@ -10,10 +10,12 @@ export function MessageList({
   messages,
   streamingContent,
   onRegenerate,
+  onEditMessage,
 }: {
   messages: Message[];
   streamingContent: string | null;
   onRegenerate?: () => void;
+  onEditMessage?: (messageId: string, content: string) => void;
 }) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -39,6 +41,11 @@ export function MessageList({
             onRegenerate={
               streamingContent === null && index === messages.length - 1 && message.role === "assistant"
                 ? onRegenerate
+                : undefined
+            }
+            onEdit={
+              streamingContent === null && message.role === "user" && onEditMessage
+                ? (content) => onEditMessage(message.id, content)
                 : undefined
             }
           />

@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 
 import { getConversation } from "@/lib/api/conversations";
-import { regenerateMessage, streamMessage } from "@/lib/api/stream";
+import { editMessage, regenerateMessage, streamMessage } from "@/lib/api/stream";
 import type { Message } from "@/lib/types";
 
 import { Composer } from "./Composer";
@@ -21,6 +21,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
   // turn). Combined with query data below rather than synced into state via an effect.
   const [pendingMessages, setPendingMessages] = useState<Message[]>([]);
   const [isRegenerating, setIsRegenerating] = useState(false);
+  const [editingState, setEditingState] = useState<{ messageId: string; content: string } | null>(null);
   const [streamingContent, setStreamingContent] = useState<string | null>(null);
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -31,11 +32,22 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
   }, []);
 
   const baseMessages = conversation?.messages ?? [];
-  // While regenerating, the last assistant reply is being replaced server-side - hide it
-  // from the base list so the streaming placeholder below doesn't render alongside a stale
-  // duplicate of the reply it's about to replace.
-  const visibleBase =
-    isRegenerating && baseMessages.at(-1)?.role === "assistant" ? baseMessages.slice(0, -1) : baseMessages;
+  let visibleBase = baseMessages;
+  if (isRegenerating && baseMessages.at(-1)?.role === "assistant") {
+    // The last assistant reply is being replaced server-side - hide it from the base list so
+    // the streaming placeholder doesn't render alongside a stale duplicate of what it replaces.
+    visibleBase = baseMessages.slice(0, -1);
+  } else if (editingState) {
+    // Editing forks the conversation at this message: show everything up to and including it
+    // (with its new content), and drop everything after - matching what the server will do.
+    const index = baseMessages.findIndex((m) => m.id === editingState.messageId);
+    if (index !== -1) {
+      visibleBase = [
+        ...baseMessages.slice(0, index),
+        { ...baseMessages[index], content: editingState.content },
+      ];
+    }
+  }
   const messages = [...visibleBase, ...pendingMessages];
 
   const runStream = (streamFn: (signal: AbortSignal) => Promise<void>) => {
@@ -115,10 +127,40 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
     );
   };
 
+  const handleEditMessage = (messageId: string, content: string) => {
+    setEditingState({ messageId, content });
+
+    runStream((signal) =>
+      editMessage(
+        conversationId,
+        messageId,
+        content,
+        {
+          onToken: (delta) => setStreamingContent((prev) => (prev ?? "") + delta),
+          onDone: () => {
+            setIsSending(false);
+            setEditingState(null);
+            setStreamingContent(null);
+            queryClient.invalidateQueries({ queryKey: ["conversation", conversationId] });
+            queryClient.invalidateQueries({ queryKey: ["conversations"] });
+          },
+          onError: (message) => {
+            setIsSending(false);
+            setEditingState(null);
+            setStreamingContent(null);
+            setError(message);
+          },
+        },
+        signal
+      )
+    );
+  };
+
   const handleStop = () => {
     abortRef.current?.abort();
     setIsSending(false);
     setIsRegenerating(false);
+    setEditingState(null);
     setStreamingContent(null);
     // Don't optimistically append here: the server (verified to persist partial content on
     // disconnect, with finish_reason "cancelled") will return the real messages on refetch.
@@ -141,6 +183,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
         messages={messages}
         streamingContent={streamingContent}
         onRegenerate={!isSending ? handleRegenerate : undefined}
+        onEditMessage={!isSending ? handleEditMessage : undefined}
       />
       {error && (
         <div className="mx-auto max-w-3xl w-full px-4 pb-1 flex items-center gap-3 text-sm text-red-500">
