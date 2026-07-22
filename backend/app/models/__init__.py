@@ -5,6 +5,7 @@ from app.models.document import Document
 from app.models.memory import Memory
 from app.models.message import Message
 from app.models.session import Session
+from app.models.tool_call_log import ToolCallLog
 from app.models.user import User
 
 __all__ = [
@@ -16,4 +17,5 @@ __all__ = [
     "Memory",
     "ConversationSummary",
     "Document",
+    "ToolCallLog",
 ]
