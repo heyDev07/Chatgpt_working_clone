@@ -17,6 +17,22 @@ class ToolRegistry:
     def list_definitions(self) -> list[ToolDefinition]:
         return [tool.definition for tool in self._tools.values()]
 
+    def list_openai_tool_schemas(self) -> list[dict]:
+        """OpenAI-function-calling-shaped tool schemas - the one format chat_service and the
+        providers agree on; GeminiProvider translates from this shape internally rather than
+        the registry needing to know about every provider's own format."""
+        return [
+            {
+                "type": "function",
+                "function": {
+                    "name": d.name,
+                    "description": d.description,
+                    "parameters": d.input_schema,
+                },
+            }
+            for d in self.list_definitions()
+        ]
+
 
 @lru_cache
 def get_tool_registry() -> ToolRegistry:

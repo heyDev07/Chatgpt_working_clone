@@ -6,8 +6,14 @@ import { useEffect, useRef, useState } from "react";
 
 import { getConversation } from "@/lib/api/conversations";
 import { setMessageFeedback } from "@/lib/api/messages";
-import { editMessage, regenerateMessage, streamMessage } from "@/lib/api/stream";
-import type { Message } from "@/lib/types";
+import {
+  editMessage,
+  regenerateMessage,
+  streamMessage,
+  type ToolCallEventData,
+  type ToolResultEventData,
+} from "@/lib/api/stream";
+import type { Message, ToolActivity } from "@/lib/types";
 
 import { Composer } from "./Composer";
 import { ConversationSettings } from "./ConversationSettings";
@@ -26,10 +32,28 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
   const [isRegenerating, setIsRegenerating] = useState(false);
   const [editingState, setEditingState] = useState<{ messageId: string; content: string } | null>(null);
   const [streamingContent, setStreamingContent] = useState<string | null>(null);
+  const [toolActivity, setToolActivity] = useState<ToolActivity[]>([]);
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+
+  const handleToolCall = (event: ToolCallEventData) => {
+    setToolActivity((prev) => [
+      ...prev,
+      { id: event.id, name: event.name, arguments: event.arguments, status: "calling" },
+    ]);
+  };
+
+  const handleToolResult = (event: ToolResultEventData) => {
+    setToolActivity((prev) =>
+      prev.map((call) =>
+        call.id === event.id
+          ? { ...call, status: event.success ? "success" : "error", output: event.output, error: event.error }
+          : call
+      )
+    );
+  };
 
   useEffect(() => {
     return () => abortRef.current?.abort();
@@ -57,6 +81,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
   const runStream = (streamFn: (signal: AbortSignal) => Promise<void>) => {
     setError(null);
     setStreamingContent("");
+    setToolActivity([]);
     setIsSending(true);
 
     const controller = new AbortController();
@@ -86,9 +111,12 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
         content,
         {
           onToken: (delta) => setStreamingContent((prev) => (prev ?? "") + delta),
+          onToolCall: handleToolCall,
+          onToolResult: handleToolResult,
           onDone: () => {
             setIsSending(false);
             setStreamingContent(null);
+            setToolActivity([]);
             setPendingMessages([]);
             queryClient.invalidateQueries({ queryKey: ["conversation", conversationId] });
             queryClient.invalidateQueries({ queryKey: ["conversations"] });
@@ -96,6 +124,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
           onError: (message) => {
             setIsSending(false);
             setStreamingContent(null);
+            setToolActivity([]);
             setError(message);
           },
         },
@@ -112,10 +141,13 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
         conversationId,
         {
           onToken: (delta) => setStreamingContent((prev) => (prev ?? "") + delta),
+          onToolCall: handleToolCall,
+          onToolResult: handleToolResult,
           onDone: () => {
             setIsSending(false);
             setIsRegenerating(false);
             setStreamingContent(null);
+            setToolActivity([]);
             queryClient.invalidateQueries({ queryKey: ["conversation", conversationId] });
             queryClient.invalidateQueries({ queryKey: ["conversations"] });
           },
@@ -123,6 +155,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
             setIsSending(false);
             setIsRegenerating(false);
             setStreamingContent(null);
+            setToolActivity([]);
             setError(message);
           },
         },
@@ -141,10 +174,13 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
         content,
         {
           onToken: (delta) => setStreamingContent((prev) => (prev ?? "") + delta),
+          onToolCall: handleToolCall,
+          onToolResult: handleToolResult,
           onDone: () => {
             setIsSending(false);
             setEditingState(null);
             setStreamingContent(null);
+            setToolActivity([]);
             queryClient.invalidateQueries({ queryKey: ["conversation", conversationId] });
             queryClient.invalidateQueries({ queryKey: ["conversations"] });
           },
@@ -152,6 +188,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
             setIsSending(false);
             setEditingState(null);
             setStreamingContent(null);
+            setToolActivity([]);
             setError(message);
           },
         },
@@ -172,6 +209,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
     setIsRegenerating(false);
     setEditingState(null);
     setStreamingContent(null);
+    setToolActivity([]);
     // Don't optimistically append here: the server (verified to persist partial content on
     // disconnect, with finish_reason "cancelled") will return the real messages on refetch.
     setPendingMessages([]);
@@ -204,6 +242,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
       <MessageList
         messages={messages}
         streamingContent={streamingContent}
+        toolActivity={toolActivity}
         onRegenerate={!isSending ? handleRegenerate : undefined}
         onEditMessage={!isSending ? handleEditMessage : undefined}
         onFeedback={handleFeedback}

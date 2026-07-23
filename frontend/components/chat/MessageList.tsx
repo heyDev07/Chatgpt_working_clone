@@ -2,19 +2,22 @@
 
 import { useEffect, useRef } from "react";
 
-import type { Message } from "@/lib/types";
+import type { Message, ToolActivity } from "@/lib/types";
 
 import { MessageBubble } from "./MessageBubble";
+import { ToolActivityList } from "./ToolActivityList";
 
 export function MessageList({
   messages,
   streamingContent,
+  toolActivity = [],
   onRegenerate,
   onEditMessage,
   onFeedback,
 }: {
   messages: Message[];
   streamingContent: string | null;
+  toolActivity?: ToolActivity[];
   onRegenerate?: () => void;
   onEditMessage?: (messageId: string, content: string) => void;
   onFeedback?: (messageId: string, feedback: "up" | "down" | null) => void;
@@ -23,7 +26,7 @@ export function MessageList({
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, streamingContent]);
+  }, [messages, streamingContent, toolActivity]);
 
   if (messages.length === 0 && streamingContent === null) {
     return (
@@ -57,6 +60,7 @@ export function MessageList({
             }
           />
         ))}
+        {streamingContent !== null && <ToolActivityList activity={toolActivity} />}
         {streamingContent !== null && (
           <MessageBubble
             message={{

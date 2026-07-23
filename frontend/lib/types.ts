@@ -54,3 +54,14 @@ export interface Message {
 export interface ConversationDetail extends Conversation {
   messages: Message[];
 }
+
+// Transient, live-turn-only - not persisted, cleared once the turn finishes and the real
+// message is refetched (same scoping decision as RAG citations).
+export interface ToolActivity {
+  id: string;
+  name: string;
+  arguments: Record<string, unknown>;
+  status: "calling" | "success" | "error";
+  output?: unknown;
+  error?: string | null;
+}
