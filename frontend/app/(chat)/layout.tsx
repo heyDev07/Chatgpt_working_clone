@@ -1,11 +1,12 @@
 "use client";
 
-import { BrainCog, FolderOpen, LogOut, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { BrainCog, FolderOpen, LogOut, PanelLeftClose, PanelLeftOpen, Settings } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 
 import { DocumentManager } from "@/components/documents/DocumentManager";
 import { MemoryManager } from "@/components/memory/MemoryManager";
+import { SettingsModal } from "@/components/settings/SettingsModal";
 import { ConversationList } from "@/components/sidebar/ConversationList";
 import { FolderList } from "@/components/sidebar/FolderList";
 import { NewChatButton } from "@/components/sidebar/NewChatButton";
@@ -18,6 +19,7 @@ export default function ChatLayout({ children }: { children: ReactNode }) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [showMemories, setShowMemories] = useState(false);
   const [showDocuments, setShowDocuments] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [selectedTagId, setSelectedTagId] = useState<string | null>(null);
 
@@ -91,6 +93,13 @@ export default function ChatLayout({ children }: { children: ReactNode }) {
               {user.full_name || user.email}
             </span>
             <button
+              onClick={() => setShowSettings(true)}
+              aria-label="Settings"
+              className="flex-shrink-0 text-black/40 hover:text-black dark:text-white/40 dark:hover:text-white"
+            >
+              <Settings size={15} />
+            </button>
+            <button
               onClick={handleLogout}
               aria-label="Log out"
               className="flex-shrink-0 text-black/40 hover:text-black dark:text-white/40 dark:hover:text-white"
@@ -115,6 +124,7 @@ export default function ChatLayout({ children }: { children: ReactNode }) {
 
       {showMemories && <MemoryManager onClose={() => setShowMemories(false)} />}
       {showDocuments && <DocumentManager onClose={() => setShowDocuments(false)} />}
+      {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
     </div>
   );
 }

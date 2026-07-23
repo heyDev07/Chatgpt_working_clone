@@ -27,8 +27,19 @@ export default function RootLayout({
     <html
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      suppressHydrationWarning
     >
       <body className="min-h-full flex flex-col">
+        {/* Blocking script (runs before paint) so the stored theme applies immediately -
+            without this, the page would flash the default light theme before React hydrates
+            and ThemeProvider's effect runs. suppressHydrationWarning above because this script
+            intentionally mutates <html>'s class before React can compare it to the server render. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              "(function(){try{var t=localStorage.getItem('theme');var d=t==='dark'||(t!=='light'&&window.matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.classList.toggle('dark',d);}catch(e){}})();",
+          }}
+        />
         <Providers>{children}</Providers>
       </body>
     </html>
