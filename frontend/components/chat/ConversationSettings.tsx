@@ -1,11 +1,53 @@
 "use client";
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Check, Copy, X } from "lucide-react";
+import { Check, Copy, Download, X } from "lucide-react";
 import { useState } from "react";
 
-import { shareConversation, unshareConversation, updateConversation } from "@/lib/api/conversations";
+import { exportConversation, shareConversation, unshareConversation, updateConversation } from "@/lib/api/conversations";
 import type { ConversationDetail } from "@/lib/types";
+
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
+function ExportSection({ conversation }: { conversation: ConversationDetail }) {
+  const { mutate: exportAs, isPending, variables } = useMutation({
+    mutationFn: (format: "markdown" | "json") => exportConversation(conversation.id, format),
+    onSuccess: ({ blob, filename }) => downloadBlob(blob, filename),
+  });
+
+  return (
+    <div className="flex flex-col gap-2 rounded-lg border border-black/10 dark:border-white/15 p-3">
+      <span className="text-xs font-medium text-black/60 dark:text-white/60">Export chat</span>
+      <div className="flex gap-2">
+        <button
+          onClick={() => exportAs("markdown")}
+          disabled={isPending}
+          className="flex-1 flex items-center justify-center gap-1.5 rounded-lg border border-black/10 dark:border-white/15 px-3 py-1.5 text-xs text-black/70 hover:bg-black/5 dark:text-white/70 dark:hover:bg-white/10 disabled:opacity-50"
+        >
+          <Download size={12} />
+          {isPending && variables === "markdown" ? "Exporting..." : "Markdown"}
+        </button>
+        <button
+          onClick={() => exportAs("json")}
+          disabled={isPending}
+          className="flex-1 flex items-center justify-center gap-1.5 rounded-lg border border-black/10 dark:border-white/15 px-3 py-1.5 text-xs text-black/70 hover:bg-black/5 dark:text-white/70 dark:hover:bg-white/10 disabled:opacity-50"
+        >
+          <Download size={12} />
+          {isPending && variables === "json" ? "Exporting..." : "JSON"}
+        </button>
+      </div>
+    </div>
+  );
+}
 
 function ShareSection({ conversation }: { conversation: ConversationDetail }) {
   const queryClient = useQueryClient();
@@ -133,6 +175,7 @@ export function ConversationSettings({
 
         <div className="flex flex-col gap-4 px-5 py-4">
           <ShareSection conversation={conversation} />
+          <ExportSection conversation={conversation} />
 
           <div className="flex flex-col gap-1">
             <label className="text-xs font-medium text-black/60 dark:text-white/60">Provider</label>

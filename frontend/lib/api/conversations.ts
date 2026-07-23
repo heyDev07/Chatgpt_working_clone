@@ -1,4 +1,4 @@
-import { apiFetch } from "@/lib/api/client";
+import { API_BASE_URL, ApiError, apiFetch, getAccessToken } from "@/lib/api/client";
 import type { Conversation, ConversationDetail } from "@/lib/types";
 
 export function listConversations(options?: {
@@ -63,4 +63,28 @@ export function shareConversation(id: string): Promise<Conversation> {
 
 export function unshareConversation(id: string): Promise<Conversation> {
   return apiFetch<Conversation>(`/conversations/${id}/share`, { method: "DELETE" });
+}
+
+export async function exportConversation(
+  id: string,
+  format: "markdown" | "json"
+): Promise<{ blob: Blob; filename: string }> {
+  // apiFetch always parses the body as JSON, which doesn't work for a markdown/blob download -
+  // this bypasses it to read the raw Content-Disposition filename and body instead.
+  const headers = new Headers();
+  const token = getAccessToken();
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+
+  const response = await fetch(`${API_BASE_URL}/conversations/${id}/export?format=${format}`, {
+    headers,
+    credentials: "include",
+  });
+  if (!response.ok) {
+    throw new ApiError(response.status, "export_failed", "Failed to export conversation");
+  }
+
+  const disposition = response.headers.get("Content-Disposition") ?? "";
+  const filename = /filename="([^"]+)"/.exec(disposition)?.[1] ?? `conversation.${format === "json" ? "json" : "md"}`;
+  const blob = await response.blob();
+  return { blob, filename };
 }
