@@ -1,7 +1,13 @@
 "use client";
 
-import { Monitor, Moon, Sun, X } from "lucide-react";
+import { useMutation } from "@tanstack/react-query";
+import { AlertTriangle, Monitor, Moon, Sun, X } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
 
+import { deleteAccount } from "@/lib/api/auth";
+import { ApiError } from "@/lib/api/client";
+import { useAuth } from "@/lib/auth/AuthContext";
 import { useTheme, type Theme } from "@/lib/theme/ThemeContext";
 
 const THEME_OPTIONS: { value: Theme; label: string; icon: typeof Sun }[] = [
@@ -9,6 +15,80 @@ const THEME_OPTIONS: { value: Theme; label: string; icon: typeof Sun }[] = [
   { value: "dark", label: "Dark", icon: Moon },
   { value: "system", label: "System", icon: Monitor },
 ];
+
+function DeleteAccountSection() {
+  const { logout } = useAuth();
+  const router = useRouter();
+  const [isConfirming, setIsConfirming] = useState(false);
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  const { mutate: remove, isPending } = useMutation({
+    mutationFn: () => deleteAccount(password),
+    onSuccess: async () => {
+      await logout();
+      router.push("/login");
+    },
+    onError: (err) => {
+      setError(err instanceof ApiError ? err.message : "Failed to delete account");
+    },
+  });
+
+  return (
+    <div className="flex flex-col gap-2 rounded-lg border border-red-500/30 p-3">
+      <span className="flex items-center gap-1.5 text-xs font-medium text-red-500">
+        <AlertTriangle size={13} />
+        Delete account
+      </span>
+      <p className="text-xs text-black/40 dark:text-white/40">
+        Permanently deletes your account and everything in it - conversations, memories, documents,
+        folders, and tags. This cannot be undone.
+      </p>
+      {!isConfirming ? (
+        <button
+          onClick={() => setIsConfirming(true)}
+          className="self-start text-xs text-red-500 hover:underline"
+        >
+          Delete my account
+        </button>
+      ) : (
+        <div className="flex flex-col gap-2">
+          <input
+            type="password"
+            autoFocus
+            value={password}
+            onChange={(e) => {
+              setPassword(e.target.value);
+              setError(null);
+            }}
+            placeholder="Confirm your password"
+            className="rounded-lg border border-black/10 dark:border-white/15 bg-transparent px-3 py-1.5 text-xs outline-none placeholder:text-black/30 dark:placeholder:text-white/30"
+          />
+          {error && <p className="text-xs text-red-500">{error}</p>}
+          <div className="flex gap-2">
+            <button
+              onClick={() => {
+                setIsConfirming(false);
+                setPassword("");
+                setError(null);
+              }}
+              className="flex-1 rounded-lg border border-black/10 dark:border-white/15 px-3 py-1.5 text-xs text-black/60 hover:bg-black/5 dark:text-white/60 dark:hover:bg-white/10"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => remove()}
+              disabled={isPending || !password}
+              className="flex-1 rounded-lg bg-red-500 px-3 py-1.5 text-xs text-white hover:bg-red-600 disabled:opacity-50"
+            >
+              {isPending ? "Deleting..." : "Permanently delete"}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function SettingsModal({ onClose }: { onClose: () => void }) {
   const { theme, setTheme } = useTheme();
@@ -50,6 +130,8 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
               ))}
             </div>
           </div>
+
+          <DeleteAccountSection />
         </div>
       </div>
     </div>

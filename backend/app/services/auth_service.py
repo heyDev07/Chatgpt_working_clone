@@ -9,8 +9,11 @@ from app.auth.jwt import (
 from app.auth.password import hash_password, verify_password
 from app.core.exceptions import AuthError, ValidationAppError
 from app.models.user import User
+from app.repositories.document_repo import DocumentRepository
 from app.repositories.session_repo import SessionRepository
 from app.repositories.user_repo import UserRepository
+from app.storage.s3_client import delete_object
+from app.vectorstore.qdrant_client import delete_document_chunks
 
 
 class AuthService:
@@ -18,6 +21,7 @@ class AuthService:
         self.db = db
         self.users = UserRepository(db)
         self.sessions = SessionRepository(db)
+        self.documents = DocumentRepository(db)
 
     async def register(self, email: str, password: str, full_name: str | None) -> User:
         existing = await self.users.get_by_email(email)
@@ -73,3 +77,27 @@ class AuthService:
         if session:
             await self.sessions.revoke(session)
             await self.db.commit()
+
+    async def delete_account(self, user: User, password: str) -> None:
+        """Permanently deletes the account and everything owned by it. Requires re-entering the
+        password (not just a valid session) as a deliberate confirmation step for a destructive,
+        irreversible action. Sessions/conversations/messages/memories/folders/tags/tool_call_logs
+        all cascade at the DB level via ON DELETE CASCADE on user_id - only document storage
+        (MinIO objects, Qdrant vectors) lives outside Postgres and needs explicit cleanup here,
+        same as the per-document delete in DocumentService."""
+        if not verify_password(password, user.password_hash):
+            raise AuthError("Incorrect password")
+
+        documents = await self.documents.list_for_user(user.id)
+        for document in documents:
+            try:
+                await delete_object(document.storage_key)
+            except Exception:
+                pass
+            try:
+                await delete_document_chunks(document.id)
+            except Exception:
+                pass
+
+        await self.users.delete(user)
+        await self.db.commit()

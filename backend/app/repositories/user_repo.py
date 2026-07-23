@@ -22,3 +22,7 @@ class UserRepository:
         self.db.add(user)
         await self.db.flush()
         return user
+
+    async def delete(self, user: User) -> None:
+        await self.db.delete(user)
+        await self.db.flush()

@@ -22,3 +22,10 @@ export function logout(): Promise<void> {
 export function fetchCurrentUser(): Promise<User> {
   return apiFetch<User>("/auth/me");
 }
+
+export function deleteAccount(password: string): Promise<void> {
+  return apiFetch<void>("/auth/me", {
+    method: "DELETE",
+    body: JSON.stringify({ password }),
+  });
+}

@@ -6,7 +6,7 @@ from app.api.deps import get_current_user, get_db, get_redis
 from app.core.exceptions import AuthError
 from app.middleware.rate_limit import login_rate_limiter
 from app.models.user import User
-from app.schemas.auth import LoginRequest, RegisterRequest, TokenResponse, UserOut
+from app.schemas.auth import DeleteAccountRequest, LoginRequest, RegisterRequest, TokenResponse, UserOut
 from app.services.auth_service import AuthService
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -79,3 +79,14 @@ async def logout(request: Request, response: Response, db: AsyncSession = Depend
 @router.get("/me", response_model=UserOut)
 async def me(current_user: User = Depends(get_current_user)) -> User:
     return current_user
+
+
+@router.delete("/me", status_code=204)
+async def delete_account(
+    payload: DeleteAccountRequest,
+    response: Response,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    await AuthService(db).delete_account(current_user, payload.password)
+    response.delete_cookie(REFRESH_COOKIE_NAME, path="/api/v1/auth")
