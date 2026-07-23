@@ -13,9 +13,17 @@ export interface TokenResponse {
   expires_in: number;
 }
 
+export interface Tag {
+  id: string;
+  name: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Conversation {
   id: string;
   folder_id: string | null;
+  tags: Tag[];
   title: string;
   provider: string;
   model: string;

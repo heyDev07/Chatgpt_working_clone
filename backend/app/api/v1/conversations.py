@@ -39,10 +39,13 @@ async def list_conversations(
     archived: bool = False,
     search: str | None = None,
     folder_id: uuid.UUID | None = None,
+    tag_id: uuid.UUID | None = None,
     current_user: User = Depends(get_current_user),
     service: ConversationService = Depends(_get_service),
 ):
-    return await service.list_for_user(current_user.id, archived=archived, search=search, folder_id=folder_id)
+    return await service.list_for_user(
+        current_user.id, archived=archived, search=search, folder_id=folder_id, tag_id=tag_id
+    )
 
 
 @router.get("/{conversation_id}", response_model=ConversationDetailOut)
@@ -84,6 +87,26 @@ async def set_conversation_folder(
     service: ConversationService = Depends(_get_service),
 ):
     return await service.set_folder(conversation_id, current_user.id, payload.folder_id)
+
+
+@router.post("/{conversation_id}/tags/{tag_id}", response_model=ConversationOut)
+async def add_conversation_tag(
+    conversation_id: uuid.UUID,
+    tag_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    service: ConversationService = Depends(_get_service),
+):
+    return await service.add_tag(conversation_id, current_user.id, tag_id)
+
+
+@router.delete("/{conversation_id}/tags/{tag_id}", response_model=ConversationOut)
+async def remove_conversation_tag(
+    conversation_id: uuid.UUID,
+    tag_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    service: ConversationService = Depends(_get_service),
+):
+    return await service.remove_tag(conversation_id, current_user.id, tag_id)
 
 
 @router.delete("/{conversation_id}", status_code=204)

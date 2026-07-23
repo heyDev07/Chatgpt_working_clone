@@ -7,14 +7,19 @@ import { useState } from "react";
 import { ConversationItem } from "@/components/sidebar/ConversationItem";
 import { listConversations } from "@/lib/api/conversations";
 
-export function ConversationList({ folderId }: { folderId: string | null }) {
+export function ConversationList({ folderId, tagId }: { folderId: string | null; tagId: string | null }) {
   const [search, setSearch] = useState("");
   const [showArchived, setShowArchived] = useState(false);
 
   const { data: conversations, isLoading } = useQuery({
-    queryKey: ["conversations", { archived: showArchived, search, folderId }],
+    queryKey: ["conversations", { archived: showArchived, search, folderId, tagId }],
     queryFn: () =>
-      listConversations({ archived: showArchived, search: search || undefined, folderId: folderId || undefined }),
+      listConversations({
+        archived: showArchived,
+        search: search || undefined,
+        folderId: folderId || undefined,
+        tagId: tagId || undefined,
+      }),
   });
 
   return (
@@ -51,7 +56,9 @@ export function ConversationList({ folderId }: { folderId: string | null }) {
                 ? "No archived chats"
                 : folderId
                   ? "No chats in this folder"
-                  : "No conversations yet"}
+                  : tagId
+                    ? "No chats with this tag"
+                    : "No conversations yet"}
           </p>
         )}
         {conversations?.map((conversation) => (

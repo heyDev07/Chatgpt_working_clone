@@ -6,6 +6,7 @@ from sqlalchemy.orm import selectinload
 
 from app.models.conversation import Conversation
 from app.models.message import Message
+from app.models.tag import Tag
 
 
 class ConversationRepository:
@@ -16,6 +17,12 @@ class ConversationRepository:
         conversation = Conversation(user_id=user_id, title=title, provider=provider, model=model)
         self.db.add(conversation)
         await self.db.flush()
+        # A many-to-many (secondary=) collection isn't known-empty for a persistent object the
+        # way a plain FK-based one is - once flushed, accessing .tags would trigger a lazy
+        # SELECT outside an awaited context (MissingGreenlet) during response serialization.
+        # Explicitly loading it here (it's genuinely empty on a brand-new conversation) avoids
+        # that without needing every caller to remember to selectinload a fresh object.
+        await self.db.refresh(conversation, attribute_names=["tags"])
         return conversation
 
     async def list_for_user(
@@ -25,12 +32,17 @@ class ConversationRepository:
         archived: bool = False,
         search: str | None = None,
         folder_id: uuid.UUID | None = None,
+        tag_id: uuid.UUID | None = None,
     ) -> list[Conversation]:
-        query = select(Conversation).where(
-            Conversation.user_id == user_id, Conversation.is_archived.is_(archived)
+        query = (
+            select(Conversation)
+            .where(Conversation.user_id == user_id, Conversation.is_archived.is_(archived))
+            .options(selectinload(Conversation.tags))
         )
         if folder_id is not None:
             query = query.where(Conversation.folder_id == folder_id)
+        if tag_id is not None:
+            query = query.where(Conversation.tags.any(Tag.id == tag_id))
         if search:
             pattern = f"%{search}%"
             query = query.where(
@@ -47,7 +59,9 @@ class ConversationRepository:
 
     async def get_for_user(self, conversation_id: uuid.UUID, user_id: uuid.UUID) -> Conversation | None:
         result = await self.db.execute(
-            select(Conversation).where(Conversation.id == conversation_id, Conversation.user_id == user_id)
+            select(Conversation)
+            .where(Conversation.id == conversation_id, Conversation.user_id == user_id)
+            .options(selectinload(Conversation.tags))
         )
         return result.scalar_one_or_none()
 
@@ -55,7 +69,7 @@ class ConversationRepository:
         result = await self.db.execute(
             select(Conversation)
             .where(Conversation.id == conversation_id, Conversation.user_id == user_id)
-            .options(selectinload(Conversation.messages))
+            .options(selectinload(Conversation.messages), selectinload(Conversation.tags))
         )
         return result.scalar_one_or_none()
 
@@ -108,6 +122,20 @@ class ConversationRepository:
         conversation.folder_id = folder_id
         await self.db.flush()
         await self.db.refresh(conversation)
+        return conversation
+
+    async def add_tag(self, conversation: Conversation, tag: Tag) -> Conversation:
+        if tag not in conversation.tags:
+            conversation.tags.append(tag)
+            await self.db.flush()
+            await self.db.refresh(conversation)
+        return conversation
+
+    async def remove_tag(self, conversation: Conversation, tag: Tag) -> Conversation:
+        if tag in conversation.tags:
+            conversation.tags.remove(tag)
+            await self.db.flush()
+            await self.db.refresh(conversation)
         return conversation
 
     async def touch(self, conversation: Conversation) -> None:

@@ -9,6 +9,7 @@ import { MemoryManager } from "@/components/memory/MemoryManager";
 import { ConversationList } from "@/components/sidebar/ConversationList";
 import { FolderList } from "@/components/sidebar/FolderList";
 import { NewChatButton } from "@/components/sidebar/NewChatButton";
+import { TagFilterBar } from "@/components/sidebar/TagFilterBar";
 import { useAuth } from "@/lib/auth/AuthContext";
 
 export default function ChatLayout({ children }: { children: ReactNode }) {
@@ -18,6 +19,7 @@ export default function ChatLayout({ children }: { children: ReactNode }) {
   const [showMemories, setShowMemories] = useState(false);
   const [showDocuments, setShowDocuments] = useState(false);
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
+  const [selectedTagId, setSelectedTagId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isLoading && !user) {
@@ -64,7 +66,8 @@ export default function ChatLayout({ children }: { children: ReactNode }) {
           </div>
           <div className="flex-1 overflow-y-auto flex flex-col gap-2 px-1">
             <FolderList selectedFolderId={selectedFolderId} onSelect={setSelectedFolderId} />
-            <ConversationList folderId={selectedFolderId} />
+            <TagFilterBar selectedTagId={selectedTagId} onSelect={setSelectedTagId} />
+            <ConversationList folderId={selectedFolderId} tagId={selectedTagId} />
           </div>
           <button
             onClick={() => setShowDocuments(true)}

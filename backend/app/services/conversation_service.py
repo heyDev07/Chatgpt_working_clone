@@ -7,6 +7,7 @@ from app.models.conversation import Conversation
 from app.providers.provider_manager import ProviderManager
 from app.repositories.conversation_repo import ConversationRepository
 from app.repositories.folder_repo import FolderRepository
+from app.repositories.tag_repo import TagRepository
 
 
 class ConversationService:
@@ -14,6 +15,7 @@ class ConversationService:
         self.db = db
         self.conversations = ConversationRepository(db)
         self.folders = FolderRepository(db)
+        self.tags = TagRepository(db)
         self.provider_manager = provider_manager
 
     async def create(
@@ -38,10 +40,33 @@ class ConversationService:
         archived: bool = False,
         search: str | None = None,
         folder_id: uuid.UUID | None = None,
+        tag_id: uuid.UUID | None = None,
     ) -> list[Conversation]:
         return await self.conversations.list_for_user(
-            user_id, archived=archived, search=search, folder_id=folder_id
+            user_id, archived=archived, search=search, folder_id=folder_id, tag_id=tag_id
         )
+
+    async def add_tag(self, conversation_id: uuid.UUID, user_id: uuid.UUID, tag_id: uuid.UUID) -> Conversation:
+        conversation = await self.conversations.get_for_user(conversation_id, user_id)
+        if not conversation:
+            raise NotFoundError("Conversation not found")
+        tag = await self.tags.get_for_user(tag_id, user_id)
+        if not tag:
+            raise NotFoundError("Tag not found")
+        conversation = await self.conversations.add_tag(conversation, tag)
+        await self.db.commit()
+        return conversation
+
+    async def remove_tag(self, conversation_id: uuid.UUID, user_id: uuid.UUID, tag_id: uuid.UUID) -> Conversation:
+        conversation = await self.conversations.get_for_user(conversation_id, user_id)
+        if not conversation:
+            raise NotFoundError("Conversation not found")
+        tag = await self.tags.get_for_user(tag_id, user_id)
+        if not tag:
+            raise NotFoundError("Tag not found")
+        conversation = await self.conversations.remove_tag(conversation, tag)
+        await self.db.commit()
+        return conversation
 
     async def set_folder(
         self, conversation_id: uuid.UUID, user_id: uuid.UUID, folder_id: uuid.UUID | None

@@ -5,11 +5,13 @@ export function listConversations(options?: {
   archived?: boolean;
   search?: string;
   folderId?: string;
+  tagId?: string;
 }): Promise<Conversation[]> {
   const params = new URLSearchParams();
   if (options?.archived) params.set("archived", "true");
   if (options?.search) params.set("search", options.search);
   if (options?.folderId) params.set("folder_id", options.folderId);
+  if (options?.tagId) params.set("tag_id", options.tagId);
   const query = params.toString();
   return apiFetch<Conversation[]>(`/conversations${query ? `?${query}` : ""}`);
 }

@@ -4,6 +4,7 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.message import MessageOut
+from app.schemas.tag import TagOut
 
 
 class ConversationCreate(BaseModel):
@@ -29,6 +30,7 @@ class ConversationOut(BaseModel):
 
     id: uuid.UUID
     folder_id: uuid.UUID | None
+    tags: list[TagOut] = []
     title: str
     provider: str
     model: str

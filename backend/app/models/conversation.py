@@ -5,10 +5,12 @@ from sqlalchemy import Boolean, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.models.associations import conversation_tags
 from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 
 if TYPE_CHECKING:
     from app.models.message import Message
+    from app.models.tag import Tag
 
 
 class Conversation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -35,3 +37,4 @@ class Conversation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     messages: Mapped[list["Message"]] = relationship(
         back_populates="conversation", cascade="all, delete-orphan", order_by="Message.created_at"
     )
+    tags: Mapped[list["Tag"]] = relationship(secondary=conversation_tags, back_populates="conversations")
