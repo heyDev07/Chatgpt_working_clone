@@ -6,7 +6,7 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.jwt import decode_access_token
-from app.core.exceptions import AuthError
+from app.core.exceptions import AuthError, ForbiddenError
 from app.db.database import get_db_session
 from app.db.redis_client import get_redis as _get_redis
 from app.models.user import User
@@ -45,3 +45,9 @@ async def get_current_user(
     if not user or not user.is_active:
         raise AuthError("User not found or inactive")
     return user
+
+
+async def get_current_admin_user(current_user: User = Depends(get_current_user)) -> User:
+    if current_user.role != "admin":
+        raise ForbiddenError("Admin access required")
+    return current_user

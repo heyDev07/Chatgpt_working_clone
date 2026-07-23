@@ -1,6 +1,7 @@
 "use client";
 
-import { BrainCog, FolderOpen, LogOut, PanelLeftClose, PanelLeftOpen, Settings } from "lucide-react";
+import { BrainCog, FolderOpen, LogOut, PanelLeftClose, PanelLeftOpen, Settings, ShieldCheck } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 
@@ -85,6 +86,15 @@ export default function ChatLayout({ children }: { children: ReactNode }) {
             <BrainCog size={16} />
             Memories
           </button>
+          {user.role === "admin" && (
+            <Link
+              href="/admin"
+              className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-black/70 hover:bg-black/5 dark:text-white/70 dark:hover:bg-white/10"
+            >
+              <ShieldCheck size={16} />
+              Admin
+            </Link>
+          )}
           <div className="border-t border-black/10 dark:border-white/10 pt-2 flex items-center gap-2 px-1 py-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/5">
             <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-blue-600 text-xs font-medium text-white">
               {initials}
@@ -120,7 +130,10 @@ export default function ChatLayout({ children }: { children: ReactNode }) {
         </button>
       )}
 
-      <div className="flex flex-1 flex-col overflow-hidden">{children}</div>
+      {/* Reserves a gutter matching the floating expand button's footprint so it never sits on
+          top of a page's own header content (e.g. the chat title) - only needed while collapsed,
+          since the button only renders then. */}
+      <div className={`flex flex-1 flex-col overflow-hidden ${!isSidebarOpen ? "pl-12" : ""}`}>{children}</div>
 
       {showMemories && <MemoryManager onClose={() => setShowMemories(false)} />}
       {showDocuments && <DocumentManager onClose={() => setShowDocuments(false)} />}

@@ -28,8 +28,14 @@ class AuthService:
         if existing:
             raise ValidationAppError("An account with this email already exists")
 
+        # First account in the system bootstraps as admin - there's no invite/promotion flow
+        # yet, so this is the only way an admin account comes to exist.
+        is_first_user = await self.users.count() == 0
         user = await self.users.create(
-            email=email, password_hash=hash_password(password), full_name=full_name
+            email=email,
+            password_hash=hash_password(password),
+            full_name=full_name,
+            role="admin" if is_first_user else "user",
         )
         await self.db.commit()
         return user
