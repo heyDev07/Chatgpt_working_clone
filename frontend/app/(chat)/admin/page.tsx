@@ -3,6 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ShieldOff, UserCheck } from "lucide-react";
 
+import { UsageAnalytics } from "@/components/admin/UsageAnalytics";
 import { listAllUsers, setUserRole, setUserStatus } from "@/lib/api/admin";
 import { useAuth } from "@/lib/auth/AuthContext";
 import type { User } from "@/lib/types";
@@ -98,6 +99,9 @@ export default function AdminPage() {
   return (
     <main className="flex-1 overflow-y-auto bg-white dark:bg-[#212121]">
       <div className="mx-auto max-w-4xl px-4 py-8">
+        <h1 className="text-xl font-semibold text-black/90 dark:text-white/90 mb-4">Analytics</h1>
+        <UsageAnalytics />
+
         <h1 className="text-xl font-semibold text-black/90 dark:text-white/90 mb-1">User management</h1>
         <p className="text-sm text-black/40 dark:text-white/40 mb-6">{users?.length ?? 0} accounts</p>
 
