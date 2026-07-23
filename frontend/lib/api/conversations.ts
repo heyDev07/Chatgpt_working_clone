@@ -56,3 +56,11 @@ export function setConversationFolder(id: string, folderId: string | null): Prom
     body: JSON.stringify({ folder_id: folderId }),
   });
 }
+
+export function shareConversation(id: string): Promise<Conversation> {
+  return apiFetch<Conversation>(`/conversations/${id}/share`, { method: "POST" });
+}
+
+export function unshareConversation(id: string): Promise<Conversation> {
+  return apiFetch<Conversation>(`/conversations/${id}/share`, { method: "DELETE" });
+}

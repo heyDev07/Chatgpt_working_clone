@@ -31,6 +31,7 @@ class ConversationOut(BaseModel):
     id: uuid.UUID
     folder_id: uuid.UUID | None
     tags: list[TagOut] = []
+    share_token: str | None
     title: str
     provider: str
     model: str

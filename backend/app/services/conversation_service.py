@@ -1,3 +1,4 @@
+import secrets
 import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -80,6 +81,30 @@ class ConversationService:
                 raise NotFoundError("Folder not found")
         conversation = await self.conversations.set_folder(conversation, folder_id)
         await self.db.commit()
+        return conversation
+
+    async def share(self, conversation_id: uuid.UUID, user_id: uuid.UUID) -> Conversation:
+        conversation = await self.conversations.get_for_user(conversation_id, user_id)
+        if not conversation:
+            raise NotFoundError("Conversation not found")
+        if not conversation.share_token:
+            token = secrets.token_urlsafe(32)
+            conversation = await self.conversations.set_share_token(conversation, token)
+            await self.db.commit()
+        return conversation
+
+    async def unshare(self, conversation_id: uuid.UUID, user_id: uuid.UUID) -> Conversation:
+        conversation = await self.conversations.get_for_user(conversation_id, user_id)
+        if not conversation:
+            raise NotFoundError("Conversation not found")
+        conversation = await self.conversations.set_share_token(conversation, None)
+        await self.db.commit()
+        return conversation
+
+    async def get_shared(self, share_token: str) -> Conversation:
+        conversation = await self.conversations.get_by_share_token(share_token)
+        if not conversation:
+            raise NotFoundError("Shared conversation not found")
         return conversation
 
     async def get_detail(self, conversation_id: uuid.UUID, user_id: uuid.UUID) -> Conversation:

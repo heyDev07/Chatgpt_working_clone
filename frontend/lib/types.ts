@@ -24,6 +24,7 @@ export interface Conversation {
   id: string;
   folder_id: string | null;
   tags: Tag[];
+  share_token: string | null;
   title: string;
   provider: string;
   model: string;

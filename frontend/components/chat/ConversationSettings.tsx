@@ -1,11 +1,86 @@
 "use client";
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { X } from "lucide-react";
+import { Check, Copy, X } from "lucide-react";
 import { useState } from "react";
 
-import { updateConversation } from "@/lib/api/conversations";
+import { shareConversation, unshareConversation, updateConversation } from "@/lib/api/conversations";
 import type { ConversationDetail } from "@/lib/types";
+
+function ShareSection({ conversation }: { conversation: ConversationDetail }) {
+  const queryClient = useQueryClient();
+  const [copied, setCopied] = useState(false);
+
+  const invalidate = () => {
+    queryClient.invalidateQueries({ queryKey: ["conversation", conversation.id] });
+    queryClient.invalidateQueries({ queryKey: ["conversations"] });
+  };
+
+  const { mutate: share, isPending: isSharing } = useMutation({
+    mutationFn: () => shareConversation(conversation.id),
+    onSuccess: invalidate,
+  });
+
+  const { mutate: unshare, isPending: isUnsharing } = useMutation({
+    mutationFn: () => unshareConversation(conversation.id),
+    onSuccess: invalidate,
+  });
+
+  const shareUrl = conversation.share_token
+    ? `${window.location.origin}/shared/${conversation.share_token}`
+    : null;
+
+  const copyLink = async () => {
+    if (!shareUrl) return;
+    await navigator.clipboard.writeText(shareUrl);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+
+  return (
+    <div className="flex flex-col gap-2 rounded-lg border border-black/10 dark:border-white/15 p-3">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-medium text-black/60 dark:text-white/60">Public share link</span>
+        {shareUrl ? (
+          <button
+            onClick={() => unshare()}
+            disabled={isUnsharing}
+            className="text-xs text-red-500 hover:underline disabled:opacity-50"
+          >
+            {isUnsharing ? "Removing..." : "Stop sharing"}
+          </button>
+        ) : (
+          <button
+            onClick={() => share()}
+            disabled={isSharing}
+            className="text-xs text-blue-600 hover:underline disabled:opacity-50"
+          >
+            {isSharing ? "Creating..." : "Create link"}
+          </button>
+        )}
+      </div>
+      {shareUrl && (
+        <div className="flex items-center gap-2">
+          <input
+            readOnly
+            value={shareUrl}
+            className="flex-1 min-w-0 truncate rounded-lg bg-black/5 dark:bg-white/10 px-2.5 py-1.5 text-xs outline-none"
+          />
+          <button
+            onClick={copyLink}
+            aria-label="Copy link"
+            className="flex-shrink-0 text-black/50 hover:text-black dark:text-white/50 dark:hover:text-white"
+          >
+            {copied ? <Check size={14} /> : <Copy size={14} />}
+          </button>
+        </div>
+      )}
+      <p className="text-xs text-black/40 dark:text-white/40">
+        Anyone with this link can view a read-only copy of this conversation. No account needed.
+      </p>
+    </div>
+  );
+}
 
 export function ConversationSettings({
   conversation,
@@ -57,6 +132,8 @@ export function ConversationSettings({
         </div>
 
         <div className="flex flex-col gap-4 px-5 py-4">
+          <ShareSection conversation={conversation} />
+
           <div className="flex flex-col gap-1">
             <label className="text-xs font-medium text-black/60 dark:text-white/60">Provider</label>
             <select

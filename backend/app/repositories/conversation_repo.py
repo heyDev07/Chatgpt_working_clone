@@ -73,6 +73,16 @@ class ConversationRepository:
         )
         return result.scalar_one_or_none()
 
+    async def get_by_share_token(self, share_token: str) -> Conversation | None:
+        # Deliberately not scoped to a user_id - this is the no-auth public lookup, gated only
+        # by knowledge of the (unguessable) token itself.
+        result = await self.db.execute(
+            select(Conversation)
+            .where(Conversation.share_token == share_token)
+            .options(selectinload(Conversation.messages))
+        )
+        return result.scalar_one_or_none()
+
     async def delete(self, conversation: Conversation) -> None:
         await self.db.delete(conversation)
         await self.db.flush()
@@ -120,6 +130,12 @@ class ConversationRepository:
         # A dedicated method (rather than folding this into update()'s "None means don't touch"
         # convention) because None is a meaningful value here - it means "remove from folder".
         conversation.folder_id = folder_id
+        await self.db.flush()
+        await self.db.refresh(conversation)
+        return conversation
+
+    async def set_share_token(self, conversation: Conversation, share_token: str | None) -> Conversation:
+        conversation.share_token = share_token
         await self.db.flush()
         await self.db.refresh(conversation)
         return conversation

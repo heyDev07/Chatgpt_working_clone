@@ -109,6 +109,24 @@ async def remove_conversation_tag(
     return await service.remove_tag(conversation_id, current_user.id, tag_id)
 
 
+@router.post("/{conversation_id}/share", response_model=ConversationOut)
+async def share_conversation(
+    conversation_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    service: ConversationService = Depends(_get_service),
+):
+    return await service.share(conversation_id, current_user.id)
+
+
+@router.delete("/{conversation_id}/share", response_model=ConversationOut)
+async def unshare_conversation(
+    conversation_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    service: ConversationService = Depends(_get_service),
+):
+    return await service.unshare(conversation_id, current_user.id)
+
+
 @router.delete("/{conversation_id}", status_code=204)
 async def delete_conversation(
     conversation_id: uuid.UUID,
