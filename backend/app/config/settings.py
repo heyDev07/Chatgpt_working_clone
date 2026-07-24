@@ -36,6 +36,11 @@ class Settings(BaseSettings):
     embedding_model: str = "gemini-embedding-001"
     embedding_dimensions: int = 768
 
+    # MCP servers - each is optional; a missing key just means that server's tools don't
+    # register at startup, not an error (see app/tools/registry.register_mcp_servers).
+    tavily_api_key: str = ""
+    tavily_mcp_url: str = "https://mcp.tavily.com/mcp/"
+
     # CORS
     cors_origins: str = "http://localhost:3000"
 
