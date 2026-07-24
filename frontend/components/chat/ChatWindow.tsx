@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { getConversation } from "@/lib/api/conversations";
 import { setMessageFeedback } from "@/lib/api/messages";
+import { PENDING_FIRST_MESSAGE_KEY, type PendingFirstMessage } from "@/lib/pendingFirstMessage";
 import {
   editMessage,
   regenerateMessage,
@@ -159,6 +160,27 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
       )
     );
   };
+
+  // Picks up the first message handed off from the landing page (app/(chat)/chat/page.tsx),
+  // which creates the conversation and navigates here *before* anything is actually sent, since
+  // streamMessage() needs a conversation id to already exist. Guarded by conversationId matching
+  // the stored entry, and the entry is removed immediately, so this only ever fires once for the
+  // conversation it was meant for - including under React 18 StrictMode's double-invoke in dev,
+  // where the second run just finds nothing left to send.
+  useEffect(() => {
+    const raw = sessionStorage.getItem(PENDING_FIRST_MESSAGE_KEY);
+    if (!raw) return;
+    try {
+      const pending = JSON.parse(raw) as PendingFirstMessage;
+      if (pending.conversationId === conversationId) {
+        sessionStorage.removeItem(PENDING_FIRST_MESSAGE_KEY);
+        handleSend(pending.content, pending.attachmentIds);
+      }
+    } catch {
+      sessionStorage.removeItem(PENDING_FIRST_MESSAGE_KEY);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fires once per conversationId; handleSend is a fresh closure every render, not a meaningful dependency here
+  }, [conversationId]);
 
   const handleRegenerate = () => {
     setIsRegenerating(true);
