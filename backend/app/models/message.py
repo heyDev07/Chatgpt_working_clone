@@ -10,6 +10,7 @@ from app.models.base import Base, UUIDPrimaryKeyMixin
 
 if TYPE_CHECKING:
     from app.models.conversation import Conversation
+    from app.models.message_attachment import MessageAttachment
 
 
 class Message(UUIDPrimaryKeyMixin, Base):
@@ -34,3 +35,6 @@ class Message(UUIDPrimaryKeyMixin, Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     conversation: Mapped["Conversation"] = relationship(back_populates="messages")
+    attachments: Mapped[list["MessageAttachment"]] = relationship(
+        back_populates="message", cascade="all, delete-orphan"
+    )

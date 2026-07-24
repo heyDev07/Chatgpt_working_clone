@@ -75,11 +75,12 @@ export function streamMessage(
   conversationId: string,
   content: string,
   callbacks: StreamCallbacks,
-  signal: AbortSignal
+  signal: AbortSignal,
+  attachmentIds: string[] = []
 ): Promise<void> {
   return consumeStream(
     `${API_BASE_URL}/conversations/${conversationId}/messages`,
-    JSON.stringify({ content }),
+    JSON.stringify({ content, attachment_ids: attachmentIds }),
     callbacks,
     signal
   );
@@ -103,11 +104,12 @@ export function editMessage(
   messageId: string,
   content: string,
   callbacks: StreamCallbacks,
-  signal: AbortSignal
+  signal: AbortSignal,
+  attachmentIds: string[] = []
 ): Promise<void> {
   return consumeStream(
     `${API_BASE_URL}/conversations/${conversationId}/messages/${messageId}/edit`,
-    JSON.stringify({ content }),
+    JSON.stringify({ content, attachment_ids: attachmentIds }),
     callbacks,
     signal
   );

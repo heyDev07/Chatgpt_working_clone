@@ -80,9 +80,12 @@ def _split_system_and_turns(messages: list[ChatMessage]) -> tuple[str | None, li
                 )
             )
         else:
-            turns.append(
-                types.Content(role="model" if m.role == "assistant" else "user", parts=[types.Part(text=m.content)])
-            )
+            parts = [types.Part(text=m.content)] if m.content else []
+            if m.images:
+                parts.extend(
+                    types.Part.from_bytes(data=image.data, mime_type=image.mime_type) for image in m.images
+                )
+            turns.append(types.Content(role="model" if m.role == "assistant" else "user", parts=parts))
     return system_instruction, turns
 
 

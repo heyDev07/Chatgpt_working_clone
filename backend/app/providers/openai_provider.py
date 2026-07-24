@@ -1,3 +1,4 @@
+import base64
 from collections.abc import AsyncIterator
 
 import tiktoken
@@ -30,7 +31,19 @@ def _normalize_finish_reason(reason: str | None) -> FinishReason:
 
 
 def _to_openai_message(m: ChatMessage) -> dict:
-    msg: dict = {"role": m.role, "content": m.content}
+    if m.images:
+        # OpenAI's multimodal shape: content becomes a list of typed parts instead of a plain
+        # string, text first - image bytes go inline as a base64 data URI rather than needing a
+        # separate provider-side file upload step.
+        content: list[dict] = []
+        if m.content:
+            content.append({"type": "text", "text": m.content})
+        for image in m.images:
+            data_uri = f"data:{image.mime_type};base64,{base64.b64encode(image.data).decode()}"
+            content.append({"type": "image_url", "image_url": {"url": data_uri}})
+        msg: dict = {"role": m.role, "content": content}
+    else:
+        msg = {"role": m.role, "content": m.content}
     if m.tool_calls:
         msg["tool_calls"] = [
             {"id": tc.id, "type": "function", "function": {"name": tc.name, "arguments": tc.arguments}}

@@ -109,7 +109,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
     });
   };
 
-  const handleSend = (content: string) => {
+  const handleSend = (content: string, attachmentIds: string[] = []) => {
     const isFirstMessage = messages.length === 0;
     const userMessage: Message = {
       id: `temp-user-${Date.now()}`,
@@ -119,6 +119,10 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
       token_count: null,
       model: null,
       finish_reason: null,
+      // Already-uploaded attachments have real ids by this point (Composer uploads on file
+      // select, before send) - the optimistic bubble can render them via AttachmentImage same
+      // as a persisted message would, just missing filename/size until the real one lands.
+      attachments: attachmentIds.map((id) => ({ id, filename: "", content_type: "", size_bytes: 0, created_at: "" })),
       created_at: new Date().toISOString(),
     };
     setPendingMessages((prev) => [...prev, userMessage]);
@@ -150,7 +154,8 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
             setError(message);
           },
         },
-        signal
+        signal,
+        attachmentIds
       )
     );
   };

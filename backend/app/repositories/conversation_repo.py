@@ -69,7 +69,10 @@ class ConversationRepository:
         result = await self.db.execute(
             select(Conversation)
             .where(Conversation.id == conversation_id, Conversation.user_id == user_id)
-            .options(selectinload(Conversation.messages), selectinload(Conversation.tags))
+            .options(
+                selectinload(Conversation.messages).selectinload(Message.attachments),
+                selectinload(Conversation.tags),
+            )
         )
         return result.scalar_one_or_none()
 

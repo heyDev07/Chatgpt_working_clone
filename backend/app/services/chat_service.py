@@ -12,16 +12,18 @@ from app.config.settings import get_settings
 from app.core.exceptions import NotFoundError, ProviderError
 from app.models.conversation import Conversation
 from app.models.message import Message
-from app.providers.base_provider import ChatMessage
+from app.providers.base_provider import ChatMessage, ImagePart
 from app.providers.provider_manager import ProviderManager
 from app.repositories.conversation_repo import ConversationRepository
 from app.repositories.conversation_summary_repo import ConversationSummaryRepository
 from app.repositories.document_repo import DocumentRepository
 from app.repositories.memory_repo import MemoryRepository
+from app.repositories.message_attachment_repo import MessageAttachmentRepository
 from app.repositories.message_repo import MessageRepository
 from app.services.agent_coordinator import classify_agent
 from app.services.memory_extraction import run_memory_extraction
 from app.services.title_generation import run_title_generation
+from app.storage.s3_client import download_bytes
 from app.tools.base import ToolResult
 from app.tools.browser import PlaywrightBrowserSession
 from app.tools.registry import build_playwright_tools, get_tool_registry
@@ -60,6 +62,8 @@ def _fallback_title(content: str) -> str:
     fire-and-forget AI title (see title_generation.py) replaces it - truncates on a word
     boundary with an ellipsis instead of cutting mid-word."""
     stripped = content.strip()
+    if not stripped:
+        return "Image"  # an image-only message (no caption) has no text to derive a title from
     if len(stripped) <= _FALLBACK_TITLE_LENGTH:
         return stripped
     truncated = stripped[:_FALLBACK_TITLE_LENGTH].rsplit(" ", 1)[0]
@@ -74,6 +78,7 @@ class ChatService:
         self.memories = MemoryRepository(db)
         self.summaries = ConversationSummaryRepository(db)
         self.documents = DocumentRepository(db)
+        self.attachments = MessageAttachmentRepository(db)
         self.provider_manager = provider_manager
 
     async def get_authorized_conversation(
@@ -98,7 +103,11 @@ class ChatService:
         return message
 
     async def stream_message(
-        self, conversation_id: uuid.UUID, user_id: uuid.UUID, content: str
+        self,
+        conversation_id: uuid.UUID,
+        user_id: uuid.UUID,
+        content: str,
+        attachment_ids: list[uuid.UUID] | None = None,
     ) -> AsyncIterator[dict]:
         # Re-fetch within this service's own session rather than accepting an ORM object
         # from the caller: this method is meant to run inside a StreamingResponse generator,
@@ -109,7 +118,9 @@ class ChatService:
             yield {"event": "error", "data": {"code": "not_found", "message": "Conversation not found"}}
             return
 
-        await self.messages.create(conversation.id, role="user", content=content)
+        message = await self.messages.create(conversation.id, role="user", content=content)
+        if attachment_ids:
+            await self.attachments.attach_to_message(attachment_ids, message.id, user_id)
         await self.db.commit()
 
         history = await self.messages.list_for_conversation(conversation.id)
@@ -117,11 +128,12 @@ class ChatService:
         if len(history) == 1 and conversation.title_is_auto:
             conversation.title = _fallback_title(content)
             await self.db.commit()
-            asyncio.create_task(
-                run_title_generation(
-                    self.provider_manager, conversation.id, user_id, conversation.provider, conversation.model, content
+            if content.strip():  # nothing to title-generate from an image-only message
+                asyncio.create_task(
+                    run_title_generation(
+                        self.provider_manager, conversation.id, user_id, conversation.provider, conversation.model, content
+                    )
                 )
-            )
 
         async for event in self._generate_and_persist(conversation, history):
             yield event
@@ -151,7 +163,12 @@ class ChatService:
             yield event
 
     async def edit_message(
-        self, conversation_id: uuid.UUID, user_id: uuid.UUID, message_id: uuid.UUID, content: str
+        self,
+        conversation_id: uuid.UUID,
+        user_id: uuid.UUID,
+        message_id: uuid.UUID,
+        content: str,
+        attachment_ids: list[uuid.UUID] | None = None,
     ) -> AsyncIterator[dict]:
         """Edits a previous user message and forks the conversation from that point: every
         message after it (the old reply, and anything after a since-regenerated reply) is
@@ -175,22 +192,39 @@ class ChatService:
         title_was_auto = conversation.title_is_auto
 
         message.content = content
+        if attachment_ids:
+            await self.attachments.attach_to_message(attachment_ids, message.id, user_id)
         await self.messages.delete_after(conversation.id, message.created_at)
         await self.db.commit()
 
         if is_first_message and title_was_auto:
             conversation.title = _fallback_title(content)
             await self.db.commit()
-            asyncio.create_task(
-                run_title_generation(
-                    self.provider_manager, conversation.id, user_id, conversation.provider, conversation.model, content
+            if content.strip():
+                asyncio.create_task(
+                    run_title_generation(
+                        self.provider_manager, conversation.id, user_id, conversation.provider, conversation.model, content
+                    )
                 )
-            )
 
         history = await self.messages.list_for_conversation(conversation.id)
 
         async for event in self._generate_and_persist(conversation, history):
             yield event
+
+    async def _to_chat_message(self, message: Message) -> ChatMessage:
+        """Fetches attached image bytes from S3 for a history message, if it has any - called
+        only for messages already within effective_history's verbatim window (RECENT_MESSAGE_
+        COUNT), which already bounds how many messages, and therefore how many image downloads,
+        a single turn can incur. Older, summarized-away messages never reach this - their images
+        (like their text) are lost to the summary, same tradeoff the text already makes."""
+        images = None
+        if message.attachments:
+            images = [
+                ImagePart(data=await download_bytes(a.storage_key), mime_type=a.content_type)
+                for a in message.attachments
+            ]
+        return ChatMessage(role=message.role, content=message.content, images=images)
 
     async def _get_effective_history(
         self, conversation: Conversation, history: list[Message]
@@ -325,7 +359,8 @@ class ChatService:
             chat_messages.append(ChatMessage(role="system", content=agent_def.system_prompt))
         yield {"event": "agent", "data": {"name": agent_def.name, "label": agent_def.label}}
 
-        chat_messages.extend(ChatMessage(role=m.role, content=m.content) for m in effective_history)
+        for m in effective_history:
+            chat_messages.append(await self._to_chat_message(m))
 
         generation_kwargs = {}
         if conversation.temperature is not None:

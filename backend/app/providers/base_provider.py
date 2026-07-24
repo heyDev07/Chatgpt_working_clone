@@ -15,9 +15,19 @@ class ToolCall:
 
 
 @dataclass
+class ImagePart:
+    data: bytes
+    mime_type: str
+
+
+@dataclass
 class ChatMessage:
     role: Role
     content: str
+    # Set on a user (or historical) message with attached images (Phase 10) - raw bytes rather
+    # than a URL/file-id, since both providers accept inline bytes and it avoids a
+    # provider-specific "upload the file first" step for something this app already has in S3.
+    images: list[ImagePart] | None = None
     # Set on an assistant message that calls tools (mutually exclusive in practice with
     # meaningful content - most models emit tool_calls with empty content).
     tool_calls: list[ToolCall] | None = None

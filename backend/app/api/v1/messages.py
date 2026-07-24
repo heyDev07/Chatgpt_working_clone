@@ -45,7 +45,7 @@ async def send_message(
         async with async_session_factory() as stream_db:
             stream_service = ChatService(stream_db, provider_manager)
             async for event in stream_service.stream_message(
-                conversation_id, current_user.id, payload.content
+                conversation_id, current_user.id, payload.content, payload.attachment_ids
             ):
                 yield _format_sse(event["event"], event["data"])
 
@@ -74,7 +74,7 @@ async def edit_message(
         async with async_session_factory() as stream_db:
             stream_service = ChatService(stream_db, provider_manager)
             async for event in stream_service.edit_message(
-                conversation_id, current_user.id, message_id, payload.content
+                conversation_id, current_user.id, message_id, payload.content, payload.attachment_ids
             ):
                 yield _format_sse(event["event"], event["data"])
 

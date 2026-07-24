@@ -6,6 +6,7 @@ import { useState, type KeyboardEvent } from "react";
 import { agentLabel } from "@/lib/agents";
 import type { Message } from "@/lib/types";
 
+import { AttachmentImage } from "./AttachmentImage";
 import { MarkdownContent } from "./MarkdownContent";
 import { StreamingCursor } from "./StreamingCursor";
 
@@ -91,9 +92,18 @@ export function MessageBubble({
     return (
       <div className="group flex justify-end">
         <div className="flex flex-col items-end max-w-[75%]">
-          <div className="rounded-3xl bg-neutral-100 dark:bg-neutral-800 px-4 py-2.5 text-[15px] leading-relaxed whitespace-pre-wrap break-words text-black dark:text-white">
-            {message.content}
-          </div>
+          {message.attachments && message.attachments.length > 0 && (
+            <div className="mb-1.5 flex flex-wrap justify-end gap-2">
+              {message.attachments.map((a) => (
+                <AttachmentImage key={a.id} id={a.id} alt={a.filename} />
+              ))}
+            </div>
+          )}
+          {message.content && (
+            <div className="rounded-3xl bg-neutral-100 dark:bg-neutral-800 px-4 py-2.5 text-[15px] leading-relaxed whitespace-pre-wrap break-words text-black dark:text-white">
+              {message.content}
+            </div>
+          )}
           {onEdit && (
             <button
               onClick={startEdit}

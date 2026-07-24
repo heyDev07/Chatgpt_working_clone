@@ -3,6 +3,7 @@ from datetime import datetime
 
 from sqlalchemy import delete as sa_delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.models.message import Message
 
@@ -38,6 +39,7 @@ class MessageRepository:
         result = await self.db.execute(
             select(Message)
             .where(Message.conversation_id == conversation_id)
+            .options(selectinload(Message.attachments))
             .order_by(Message.created_at)
         )
         return list(result.scalars().all())
@@ -48,7 +50,9 @@ class MessageRepository:
 
     async def get_by_id(self, message_id: uuid.UUID, conversation_id: uuid.UUID) -> Message | None:
         result = await self.db.execute(
-            select(Message).where(Message.id == message_id, Message.conversation_id == conversation_id)
+            select(Message)
+            .where(Message.id == message_id, Message.conversation_id == conversation_id)
+            .options(selectinload(Message.attachments))
         )
         return result.scalar_one_or_none()
 

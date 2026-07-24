@@ -39,6 +39,14 @@ export interface Conversation {
   updated_at: string;
 }
 
+export interface Attachment {
+  id: string;
+  filename: string;
+  content_type: string;
+  size_bytes: number;
+  created_at: string;
+}
+
 export interface Message {
   id: string;
   conversation_id: string;
@@ -49,6 +57,7 @@ export interface Message {
   finish_reason: string | null;
   feedback?: "up" | "down" | null;
   agent?: string | null;
+  attachments?: Attachment[];
   created_at: string;
 }
 

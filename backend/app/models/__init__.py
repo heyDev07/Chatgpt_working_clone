@@ -5,6 +5,7 @@ from app.models.document import Document
 from app.models.folder import Folder
 from app.models.memory import Memory
 from app.models.message import Message
+from app.models.message_attachment import MessageAttachment
 from app.models.session import Session
 from app.models.tag import Tag
 from app.models.tool_call_log import ToolCallLog
@@ -22,4 +23,5 @@ __all__ = [
     "ToolCallLog",
     "Folder",
     "Tag",
+    "MessageAttachment",
 ]
