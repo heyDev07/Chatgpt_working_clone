@@ -4,12 +4,10 @@ import { ArrowUp, ImagePlus, Mic, Square, X } from "lucide-react";
 import { useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
 
 import { uploadAttachment } from "@/lib/api/attachments";
-import {
-  describeSpeechError,
-  isSpeechRecognitionSupported,
-  startSpeechRecognition,
-  type RecognitionHandle,
-} from "@/lib/speech";
+import { startAudioRecording, transcribeAudio, type AudioRecorderHandle } from "@/lib/localTranscription";
+import { describeSpeechError, startSpeechRecognition, type RecognitionHandle } from "@/lib/speech";
+
+type VoiceMode = "idle" | "native" | "recording" | "transcribing";
 
 interface PendingAttachment {
   id: string;
@@ -29,11 +27,13 @@ export function Composer({
   const [value, setValue] = useState("");
   const [pending, setPending] = useState<PendingAttachment[]>([]);
   const [isUploading, setIsUploading] = useState(false);
-  const [isListening, setIsListening] = useState(false);
+  const [voiceMode, setVoiceMode] = useState<VoiceMode>("idle");
+  const [voiceStatus, setVoiceStatus] = useState<string | null>(null);
   const [speechError, setSpeechError] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<RecognitionHandle | null>(null);
+  const localRecordingRef = useRef<AudioRecorderHandle | null>(null);
   // The textarea's content at the moment listening started - interim speech results replace
   // only what's been said *this* listening session, appended after whatever was already typed,
   // rather than each new interim result overwriting the whole field.
@@ -56,39 +56,100 @@ export function Composer({
   }, []);
 
   useEffect(() => {
-    return () => recognitionRef.current?.stop();
+    return () => {
+      recognitionRef.current?.stop();
+      localRecordingRef.current?.cancel();
+    };
   }, []);
 
-  const toggleListening = () => {
-    if (isListening) {
-      recognitionRef.current?.stop();
-      recognitionRef.current = null;
-      setIsListening(false);
+  const appendTranscript = (transcript: string, isFinal: boolean) => {
+    const base = baseValueRef.current;
+    const joined = base && !base.endsWith(" ") ? `${base} ${transcript}` : `${base}${transcript}`;
+    setValue(joined);
+    if (isFinal) baseValueRef.current = joined;
+  };
+
+  // Local (in-browser Whisper) recording, stopped: decode + transcribe, then insert the result.
+  // Split out from toggleMic because it's also the path native voice input falls back into.
+  const finishLocalRecording = async () => {
+    const handle = localRecordingRef.current;
+    localRecordingRef.current = null;
+    if (!handle) {
+      setVoiceMode("idle");
       return;
     }
+    setVoiceMode("transcribing");
+    setVoiceStatus("Transcribing...");
+    try {
+      const samples = await handle.stop();
+      const text = await transcribeAudio(samples, setVoiceStatus);
+      if (text.trim()) appendTranscript(text.trim(), true);
+    } catch {
+      setSpeechError("Local transcription failed.");
+    } finally {
+      setVoiceStatus(null);
+      setVoiceMode("idle");
+    }
+  };
 
+  const startLocalRecording = async () => {
+    try {
+      localRecordingRef.current = await startAudioRecording();
+      setVoiceMode("recording");
+      setVoiceStatus("Recording - click the mic again to stop and transcribe");
+    } catch {
+      setVoiceMode("idle");
+      setVoiceStatus(null);
+      setSpeechError("Microphone access failed.");
+    }
+  };
+
+  const toggleMic = () => {
+    if (voiceMode === "native") {
+      recognitionRef.current?.stop();
+      recognitionRef.current = null;
+      setVoiceMode("idle");
+      return;
+    }
+    if (voiceMode === "recording") {
+      void finishLocalRecording();
+      return;
+    }
+    if (voiceMode === "transcribing") {
+      return; // ignore clicks while a transcription is already in flight
+    }
+
+    // idle -> try native speech recognition first (real-time, better UX where it actually works)
     setSpeechError(null);
+    setVoiceStatus(null);
     baseValueRef.current = value;
     const handle = startSpeechRecognition(
-      (transcript, isFinal) => {
-        const base = baseValueRef.current;
-        const joined = base && !base.endsWith(" ") ? `${base} ${transcript}` : `${base}${transcript}`;
-        setValue(joined);
-        if (isFinal) baseValueRef.current = joined;
-      },
+      appendTranscript,
       () => {
         recognitionRef.current = null;
-        setIsListening(false);
+        setVoiceMode((mode) => (mode === "native" ? "idle" : mode));
       },
       (error) => {
         recognitionRef.current = null;
-        setIsListening(false);
-        setSpeechError(describeSpeechError(error));
+        if (error === "network" || error === "service-not-allowed") {
+          // The mic itself isn't the problem here, only the recognition *service* is (this is
+          // exactly the still-open Brave bug describeSpeechError documents) - local recording
+          // doesn't depend on that service at all, so it's worth trying automatically rather
+          // than just dead-ending on an error the user can't do anything about.
+          setVoiceStatus("Native voice input unavailable - falling back to offline speech recognition...");
+          void startLocalRecording();
+        } else {
+          setVoiceMode("idle");
+          setSpeechError(describeSpeechError(error));
+        }
       }
     );
     if (handle) {
       recognitionRef.current = handle;
-      setIsListening(true);
+      setVoiceMode("native");
+    } else {
+      // No SpeechRecognition constructor at all (Firefox, Safari) - go straight to local.
+      void startLocalRecording();
     }
   };
 
@@ -178,20 +239,18 @@ export function Composer({
             >
               <ImagePlus size={19} />
             </button>
-            {isSpeechRecognitionSupported() && (
-              <button
-                onClick={toggleListening}
-                disabled={disabled}
-                aria-label={isListening ? "Stop voice input" : "Start voice input"}
-                className={`flex-shrink-0 rounded-full p-2 disabled:opacity-40 ${
-                  isListening
-                    ? "text-red-500 hover:bg-red-500/10 animate-pulse"
-                    : "text-black/50 hover:bg-black/5 dark:text-white/50 dark:hover:bg-white/10"
-                }`}
-              >
-                <Mic size={19} />
-              </button>
-            )}
+            <button
+              onClick={toggleMic}
+              disabled={disabled || voiceMode === "transcribing"}
+              aria-label={voiceMode === "idle" ? "Start voice input" : "Stop voice input"}
+              className={`flex-shrink-0 rounded-full p-2 disabled:opacity-40 ${
+                voiceMode === "native" || voiceMode === "recording"
+                  ? "text-red-500 hover:bg-red-500/10 animate-pulse"
+                  : "text-black/50 hover:bg-black/5 dark:text-white/50 dark:hover:bg-white/10"
+              }`}
+            >
+              <Mic size={19} />
+            </button>
             <textarea
               ref={textareaRef}
               value={value}
@@ -224,6 +283,9 @@ export function Composer({
         </div>
         {speechError && (
           <p className="mt-2 text-center text-xs text-red-500">{speechError}</p>
+        )}
+        {voiceStatus && !speechError && (
+          <p className="mt-2 text-center text-xs text-black/40 dark:text-white/40">{voiceStatus}</p>
         )}
         <p className="mt-2 text-center text-xs text-black/30 dark:text-white/30">
           AI can make mistakes. Check important info.
