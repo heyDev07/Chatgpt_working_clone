@@ -11,6 +11,7 @@ export function MessageList({
   messages,
   streamingContent,
   toolActivity = [],
+  activeAgent = null,
   onRegenerate,
   onEditMessage,
   onFeedback,
@@ -18,6 +19,7 @@ export function MessageList({
   messages: Message[];
   streamingContent: string | null;
   toolActivity?: ToolActivity[];
+  activeAgent?: string | null;
   onRegenerate?: () => void;
   onEditMessage?: (messageId: string, content: string) => void;
   onFeedback?: (messageId: string, feedback: "up" | "down" | null) => void;
@@ -26,7 +28,7 @@ export function MessageList({
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, streamingContent, toolActivity]);
+  }, [messages, streamingContent, toolActivity, activeAgent]);
 
   if (messages.length === 0 && streamingContent === null) {
     return (
@@ -71,6 +73,7 @@ export function MessageList({
               token_count: null,
               model: null,
               finish_reason: null,
+              agent: activeAgent,
               created_at: new Date().toISOString(),
             }}
             isStreaming

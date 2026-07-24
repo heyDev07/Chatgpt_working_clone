@@ -3,6 +3,7 @@
 import { Check, Copy, Pencil, RotateCw, Sparkles, ThumbsDown, ThumbsUp } from "lucide-react";
 import { useState, type KeyboardEvent } from "react";
 
+import { agentLabel } from "@/lib/agents";
 import type { Message } from "@/lib/types";
 
 import { MarkdownContent } from "./MarkdownContent";
@@ -108,12 +109,19 @@ export function MessageBubble({
     );
   }
 
+  const label = agentLabel(message.agent);
+
   return (
     <div className="group flex gap-4">
       <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-violet-500 text-white">
         <Sparkles size={16} />
       </div>
       <div className="flex-1 min-w-0 pt-1">
+        {label && label !== "General" && (
+          <div className="mb-1.5 inline-flex items-center gap-1 rounded-full bg-black/5 dark:bg-white/10 px-2 py-0.5 text-[10px] font-medium text-black/50 dark:text-white/50">
+            {label} agent
+          </div>
+        )}
         <div className="text-[15px] leading-relaxed text-black/90 dark:text-white/90">
           <MarkdownContent content={message.content} />
           {isStreaming && <StreamingCursor />}

@@ -17,10 +17,12 @@ class ToolRegistry:
     def list_definitions(self) -> list[ToolDefinition]:
         return [tool.definition for tool in self._tools.values()]
 
-    def list_openai_tool_schemas(self) -> list[dict]:
+    def list_openai_tool_schemas(self, allowed: frozenset[str] | None = None) -> list[dict]:
         """OpenAI-function-calling-shaped tool schemas - the one format chat_service and the
         providers agree on; GeminiProvider translates from this shape internally rather than
-        the registry needing to know about every provider's own format."""
+        the registry needing to know about every provider's own format. `allowed` restricts the
+        result to a subset (e.g. an agent persona's allowed_tools) - None means every registered
+        tool."""
         return [
             {
                 "type": "function",
@@ -31,6 +33,7 @@ class ToolRegistry:
                 },
             }
             for d in self.list_definitions()
+            if allowed is None or d.name in allowed
         ]
 
 

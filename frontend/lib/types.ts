@@ -48,6 +48,7 @@ export interface Message {
   model: string | null;
   finish_reason: string | null;
   feedback?: "up" | "down" | null;
+  agent?: string | null;
   created_at: string;
 }
 

@@ -16,8 +16,14 @@ export interface ToolResultEventData {
   error: string | null;
 }
 
+export interface AgentEventData {
+  name: string;
+  label: string;
+}
+
 export interface StreamCallbacks {
   onToken: (delta: string) => void;
+  onAgent?: (event: AgentEventData) => void;
   onToolCall?: (event: ToolCallEventData) => void;
   onToolResult?: (event: ToolResultEventData) => void;
   onDone: (data: { message_id: string | null; finish_reason: string }) => void;
@@ -43,6 +49,8 @@ function consumeStream(url: string, body: string | undefined, callbacks: StreamC
       if (ev.event === "token") {
         const data = JSON.parse(ev.data);
         callbacks.onToken(data.delta);
+      } else if (ev.event === "agent") {
+        callbacks.onAgent?.(JSON.parse(ev.data));
       } else if (ev.event === "tool_call") {
         callbacks.onToolCall?.(JSON.parse(ev.data));
       } else if (ev.event === "tool_result") {

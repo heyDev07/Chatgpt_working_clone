@@ -26,4 +26,5 @@ class MessageOut(BaseModel):
     model: str | None
     finish_reason: str | None
     feedback: str | None
+    agent: str | None
     created_at: datetime

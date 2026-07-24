@@ -27,6 +27,9 @@ class Message(UUIDPrimaryKeyMixin, Base):
     token_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     model: Mapped[str | None] = mapped_column(String(100), nullable=True)
     finish_reason: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    # Which specialized persona (see app/agents/definitions.py) generated this assistant reply -
+    # null for user/system messages and for any assistant reply predating this feature.
+    agent: Mapped[str | None] = mapped_column(String(30), nullable=True)
     feedback: Mapped[str | None] = mapped_column(String(10), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

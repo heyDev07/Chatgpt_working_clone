@@ -10,6 +10,7 @@ import {
   editMessage,
   regenerateMessage,
   streamMessage,
+  type AgentEventData,
   type ToolCallEventData,
   type ToolResultEventData,
 } from "@/lib/api/stream";
@@ -33,10 +34,13 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
   const [editingState, setEditingState] = useState<{ messageId: string; content: string } | null>(null);
   const [streamingContent, setStreamingContent] = useState<string | null>(null);
   const [toolActivity, setToolActivity] = useState<ToolActivity[]>([]);
+  const [activeAgent, setActiveAgent] = useState<string | null>(null);
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+
+  const handleAgent = (event: AgentEventData) => setActiveAgent(event.name);
 
   const handleToolCall = (event: ToolCallEventData) => {
     setToolActivity((prev) => [
@@ -82,6 +86,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
     setError(null);
     setStreamingContent("");
     setToolActivity([]);
+    setActiveAgent(null);
     setIsSending(true);
 
     const controller = new AbortController();
@@ -111,12 +116,14 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
         content,
         {
           onToken: (delta) => setStreamingContent((prev) => (prev ?? "") + delta),
+          onAgent: handleAgent,
           onToolCall: handleToolCall,
           onToolResult: handleToolResult,
           onDone: () => {
             setIsSending(false);
             setStreamingContent(null);
             setToolActivity([]);
+            setActiveAgent(null);
             setPendingMessages([]);
             queryClient.invalidateQueries({ queryKey: ["conversation", conversationId] });
             queryClient.invalidateQueries({ queryKey: ["conversations"] });
@@ -125,6 +132,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
             setIsSending(false);
             setStreamingContent(null);
             setToolActivity([]);
+            setActiveAgent(null);
             setError(message);
           },
         },
@@ -141,6 +149,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
         conversationId,
         {
           onToken: (delta) => setStreamingContent((prev) => (prev ?? "") + delta),
+          onAgent: handleAgent,
           onToolCall: handleToolCall,
           onToolResult: handleToolResult,
           onDone: () => {
@@ -148,6 +157,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
             setIsRegenerating(false);
             setStreamingContent(null);
             setToolActivity([]);
+            setActiveAgent(null);
             queryClient.invalidateQueries({ queryKey: ["conversation", conversationId] });
             queryClient.invalidateQueries({ queryKey: ["conversations"] });
           },
@@ -156,6 +166,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
             setIsRegenerating(false);
             setStreamingContent(null);
             setToolActivity([]);
+            setActiveAgent(null);
             setError(message);
           },
         },
@@ -174,6 +185,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
         content,
         {
           onToken: (delta) => setStreamingContent((prev) => (prev ?? "") + delta),
+          onAgent: handleAgent,
           onToolCall: handleToolCall,
           onToolResult: handleToolResult,
           onDone: () => {
@@ -181,6 +193,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
             setEditingState(null);
             setStreamingContent(null);
             setToolActivity([]);
+            setActiveAgent(null);
             queryClient.invalidateQueries({ queryKey: ["conversation", conversationId] });
             queryClient.invalidateQueries({ queryKey: ["conversations"] });
           },
@@ -189,6 +202,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
             setEditingState(null);
             setStreamingContent(null);
             setToolActivity([]);
+            setActiveAgent(null);
             setError(message);
           },
         },
@@ -210,6 +224,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
     setEditingState(null);
     setStreamingContent(null);
     setToolActivity([]);
+    setActiveAgent(null);
     // Don't optimistically append here: the server (verified to persist partial content on
     // disconnect, with finish_reason "cancelled") will return the real messages on refetch.
     setPendingMessages([]);
@@ -243,6 +258,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
         messages={messages}
         streamingContent={streamingContent}
         toolActivity={toolActivity}
+        activeAgent={activeAgent}
         onRegenerate={!isSending ? handleRegenerate : undefined}
         onEditMessage={!isSending ? handleEditMessage : undefined}
         onFeedback={handleFeedback}

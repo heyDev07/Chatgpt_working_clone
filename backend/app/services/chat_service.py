@@ -7,6 +7,7 @@ from collections.abc import AsyncIterator
 import anyio
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.agents.definitions import DEFAULT_AGENT, get_agent
 from app.config.settings import get_settings
 from app.core.exceptions import NotFoundError, ProviderError
 from app.models.conversation import Conversation
@@ -18,6 +19,7 @@ from app.repositories.conversation_summary_repo import ConversationSummaryReposi
 from app.repositories.document_repo import DocumentRepository
 from app.repositories.memory_repo import MemoryRepository
 from app.repositories.message_repo import MessageRepository
+from app.services.agent_coordinator import classify_agent
 from app.services.memory_extraction import run_memory_extraction
 from app.tools.registry import get_tool_registry
 from app.tools.router import ToolRouter
@@ -282,6 +284,20 @@ class ChatService:
                     )
                 )
 
+        # Route to a specialized persona based on what the latest user message actually needs.
+        # Best-effort: classify_agent() never raises and falls back to "general" on any failure,
+        # so a coordinator hiccup degrades to the plain default assistant rather than breaking
+        # the turn - same philosophy as the RAG retrieval and memory-extraction steps above.
+        selected_agent = DEFAULT_AGENT
+        if history and history[-1].role == "user":
+            selected_agent = await classify_agent(
+                self.provider_manager, conversation.provider, conversation.model, history[-1].content
+            )
+        agent_def = get_agent(selected_agent)
+        if agent_def.system_prompt:
+            chat_messages.append(ChatMessage(role="system", content=agent_def.system_prompt))
+        yield {"event": "agent", "data": {"name": agent_def.name, "label": agent_def.label}}
+
         chat_messages.extend(ChatMessage(role=m.role, content=m.content) for m in effective_history)
 
         generation_kwargs = {}
@@ -294,7 +310,7 @@ class ChatService:
 
         tool_registry = get_tool_registry()
         tool_router = ToolRouter(self.db, tool_registry)
-        tool_schemas = tool_registry.list_openai_tool_schemas() or None
+        tool_schemas = tool_registry.list_openai_tool_schemas(allowed=agent_def.allowed_tools) or None
 
         full_content = ""
         finish_reason = "stop"
@@ -386,6 +402,7 @@ class ChatService:
                         model=conversation.model,
                         finish_reason=finish_reason,
                         token_count=usage.completion_tokens if usage else None,
+                        agent=selected_agent,
                     )
                     await self.conversations.touch(conversation)
                     await self.db.commit()
