@@ -103,6 +103,10 @@ class ConversationRepository:
     ) -> Conversation:
         if title is not None:
             conversation.title = title
+            # This path is only ever reached via the user's own PATCH /conversations/{id} - a
+            # title set here is a deliberate rename, so it must never be overwritten by the
+            # auto-title fallback or the AI-generated title later.
+            conversation.title_is_auto = False
         if is_pinned is not None:
             conversation.is_pinned = is_pinned
         if is_archived is not None:
@@ -123,6 +127,14 @@ class ConversationRepository:
         # updated_at has onupdate=func.now() (server-computed) - without an explicit refresh,
         # accessing it after this method returns triggers a lazy-reload outside the awaited
         # async context (MissingGreenlet), since serialization happens after the route returns.
+        await self.db.refresh(conversation)
+        return conversation
+
+    async def set_title(self, conversation: Conversation, title: str) -> Conversation:
+        """For the system's own auto-titling (word-boundary fallback, then the AI-generated
+        replacement) - keeps title_is_auto=True, unlike update()'s user-driven rename path."""
+        conversation.title = title
+        await self.db.flush()
         await self.db.refresh(conversation)
         return conversation
 

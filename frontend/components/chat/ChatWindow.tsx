@@ -82,6 +82,18 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
   }
   const messages = [...visibleBase, ...pendingMessages];
 
+  // Title generation is fire-and-forget on the backend (see title_generation.py) and can finish
+  // after the main reply's "done" event already fired and triggered the usual one-shot
+  // invalidation below - without this, the sidebar/header would be stuck on the word-boundary
+  // fallback title forever, never picking up the nicer AI-generated one. A single delayed
+  // re-check a few seconds later is simpler than adding a push mechanism just for this.
+  const scheduleTitleRefresh = () => {
+    setTimeout(() => {
+      queryClient.invalidateQueries({ queryKey: ["conversation", conversationId] });
+      queryClient.invalidateQueries({ queryKey: ["conversations"] });
+    }, 3000);
+  };
+
   const runStream = (streamFn: (signal: AbortSignal) => Promise<void>) => {
     setError(null);
     setStreamingContent("");
@@ -98,6 +110,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
   };
 
   const handleSend = (content: string) => {
+    const isFirstMessage = messages.length === 0;
     const userMessage: Message = {
       id: `temp-user-${Date.now()}`,
       conversation_id: conversationId,
@@ -127,6 +140,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
             setPendingMessages([]);
             queryClient.invalidateQueries({ queryKey: ["conversation", conversationId] });
             queryClient.invalidateQueries({ queryKey: ["conversations"] });
+            if (isFirstMessage) scheduleTitleRefresh();
           },
           onError: (message) => {
             setIsSending(false);
@@ -176,6 +190,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
   };
 
   const handleEditMessage = (messageId: string, content: string) => {
+    const isFirstMessage = messages[0]?.id === messageId;
     setEditingState({ messageId, content });
 
     runStream((signal) =>
@@ -196,6 +211,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
             setActiveAgent(null);
             queryClient.invalidateQueries({ queryKey: ["conversation", conversationId] });
             queryClient.invalidateQueries({ queryKey: ["conversations"] });
+            if (isFirstMessage) scheduleTitleRefresh();
           },
           onError: (message) => {
             setIsSending(false);

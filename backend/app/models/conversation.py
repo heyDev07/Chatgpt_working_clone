@@ -23,6 +23,11 @@ class Conversation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         UUID(as_uuid=True), ForeignKey("folders.id", ondelete="SET NULL"), nullable=True, index=True
     )
     title: Mapped[str] = mapped_column(String(255), nullable=False, default="New Conversation")
+    # True until the user explicitly renames the conversation - lets the system safely overwrite
+    # the title (word-boundary fallback, then an AI-generated one once ready) without ever
+    # clobbering a name the user chose themselves, and without the fragile "does the title look
+    # like it was auto-derived" string-matching this replaced.
+    title_is_auto: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     # Set when the owner enables a public read-only link; null means not shared. Unique so a
     # token unambiguously identifies one conversation for the no-auth /shared/{token} lookup.
     share_token: Mapped[str | None] = mapped_column(String(43), unique=True, nullable=True, index=True)

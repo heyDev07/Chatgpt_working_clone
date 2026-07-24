@@ -21,6 +21,7 @@ from app.repositories.memory_repo import MemoryRepository
 from app.repositories.message_repo import MessageRepository
 from app.services.agent_coordinator import classify_agent
 from app.services.memory_extraction import run_memory_extraction
+from app.services.title_generation import run_title_generation
 from app.tools.registry import get_tool_registry
 from app.tools.router import ToolRouter
 from app.vectorstore.qdrant_client import search as search_document_chunks
@@ -48,6 +49,19 @@ _SUMMARY_SYSTEM_PROMPT = (
     "context needed to continue it naturally. Write a compact narrative paragraph, not a "
     "transcript. No meta-commentary about the summary itself."
 )
+
+_FALLBACK_TITLE_LENGTH = 50
+
+
+def _fallback_title(content: str) -> str:
+    """Immediate placeholder title shown the instant a conversation starts, before the
+    fire-and-forget AI title (see title_generation.py) replaces it - truncates on a word
+    boundary with an ellipsis instead of cutting mid-word."""
+    stripped = content.strip()
+    if len(stripped) <= _FALLBACK_TITLE_LENGTH:
+        return stripped
+    truncated = stripped[:_FALLBACK_TITLE_LENGTH].rsplit(" ", 1)[0]
+    return f"{truncated or stripped[:_FALLBACK_TITLE_LENGTH]}…"
 
 
 class ChatService:
@@ -98,9 +112,14 @@ class ChatService:
 
         history = await self.messages.list_for_conversation(conversation.id)
 
-        if len(history) == 1 and conversation.title == "New Conversation":
-            conversation.title = content[:50]
+        if len(history) == 1 and conversation.title_is_auto:
+            conversation.title = _fallback_title(content)
             await self.db.commit()
+            asyncio.create_task(
+                run_title_generation(
+                    self.provider_manager, conversation.id, user_id, conversation.provider, conversation.model, content
+                )
+            )
 
         async for event in self._generate_and_persist(conversation, history):
             yield event
@@ -145,20 +164,26 @@ class ChatService:
             yield {"event": "error", "data": {"code": "invalid_state", "message": "Message cannot be edited"}}
             return
 
-        # Captured before mutating: whether this is the first message and whether the
-        # conversation's title was still auto-derived from its (about to change) old content,
-        # vs. one the user set manually - which we shouldn't clobber.
+        # Captured before mutating: whether this is the first message - editing it should
+        # re-derive the title, same as a brand-new first message, but only if the title is
+        # still auto (title_is_auto) rather than one the user set manually, which must not be
+        # clobbered.
         history_before = await self.messages.list_for_conversation(conversation.id)
         is_first_message = bool(history_before) and history_before[0].id == message.id
-        title_was_auto = conversation.title in ("New Conversation", message.content[:50])
+        title_was_auto = conversation.title_is_auto
 
         message.content = content
         await self.messages.delete_after(conversation.id, message.created_at)
         await self.db.commit()
 
         if is_first_message and title_was_auto:
-            conversation.title = content[:50]
+            conversation.title = _fallback_title(content)
             await self.db.commit()
+            asyncio.create_task(
+                run_title_generation(
+                    self.provider_manager, conversation.id, user_id, conversation.provider, conversation.model, content
+                )
+            )
 
         history = await self.messages.list_for_conversation(conversation.id)
 
