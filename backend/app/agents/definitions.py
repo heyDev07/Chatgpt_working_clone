@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 
 @dataclass(frozen=True)
@@ -61,8 +61,30 @@ AGENTS: dict[str, AgentDefinition] = {
             "before offering praise. Every criticism should come with a specific, actionable fix."
         ),
     ),
+    "browser": AgentDefinition(
+        name="browser",
+        label="Browser",
+        description="Tasks that need interacting with a live webpage - navigating, clicking, filling in forms, or reading rendered page content a plain web-search snippet wouldn't capture.",
+        system_prompt=(
+            "You control a real headless browser through tools (browser_navigate, "
+            "browser_click, browser_type, browser_snapshot, etc). Call browser_snapshot after "
+            "navigating to see what's actually on the page before clicking or typing - element "
+            "references come from that snapshot, not guesses. Prefer actually looking at the "
+            "page over describing what it might contain."
+        ),
+        # Populated at startup once the Playwright MCP server's tools are discovered (see
+        # app/tools/registry.register_mcp_servers -> set_browser_agent_tools below). Starts
+        # empty so this agent has zero tools - and therefore degrades to plain chat - if
+        # discovery fails or hasn't run yet, rather than allowed_tools=None accidentally
+        # exposing browser_* tool names that don't exist yet.
+        allowed_tools=frozenset(),
+    ),
 }
 
 
 def get_agent(name: str) -> AgentDefinition:
     return AGENTS.get(name, AGENTS[DEFAULT_AGENT])
+
+
+def set_browser_agent_tools(names: frozenset[str]) -> None:
+    AGENTS["browser"] = replace(AGENTS["browser"], allowed_tools=names)

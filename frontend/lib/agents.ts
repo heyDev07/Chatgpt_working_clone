@@ -6,6 +6,7 @@ export const AGENT_LABELS: Record<string, string> = {
   coding: "Coding",
   research: "Research",
   analyst: "Data Analyst",
+  browser: "Browser",
   reviewer: "Reviewer",
 };
 

@@ -1,14 +1,27 @@
 import logging
 from functools import lru_cache
 
+from app.agents.definitions import set_browser_agent_tools
 from app.config.settings import get_settings
 from app.mcp.client import list_mcp_tools
 from app.tools.base import BaseTool, ToolDefinition
+from app.tools.browser import PlaywrightBrowserSession, PlaywrightMCPTool, discover_playwright_tools
 from app.tools.calculator import CalculatorTool
 from app.tools.mcp_tool import MCP_TOOL_TIMEOUT_SECONDS, MCPTool
 from app.tools.sql_query import SqlQueryTool
 
 logger = logging.getLogger("app.tools")
+
+# Populated once at startup by register_mcp_servers() (see discover_playwright_tools()) - kept
+# separate from the shared ToolRegistry because these definitions aren't directly callable
+# singletons like the calculator or Tavily's tools: each needs binding to a per-turn
+# PlaywrightBrowserSession (build_playwright_tools), not a global one, so they're never
+# registered into get_tool_registry() itself.
+_playwright_tool_defs: list[ToolDefinition] = []
+
+
+def build_playwright_tools(session: PlaywrightBrowserSession) -> list[BaseTool]:
+    return [PlaywrightMCPTool(d, session) for d in _playwright_tool_defs]
 
 
 class ToolRegistry:
@@ -23,6 +36,16 @@ class ToolRegistry:
 
     def list_definitions(self) -> list[ToolDefinition]:
         return [tool.definition for tool in self._tools.values()]
+
+    def child_with(self, extra_tools: list[BaseTool]) -> "ToolRegistry":
+        """A per-request view with request-scoped tools (e.g. a browser session bound to just
+        this chat turn) layered on top of the shared global tools - lets a stateful tool coexist
+        with the @lru_cache singleton registry without either side needing to know about the
+        other's lifecycle."""
+        merged = dict(self._tools)
+        for tool in extra_tools:
+            merged[tool.definition.name] = tool
+        return ToolRegistry(list(merged.values()))
 
     def list_openai_tool_schemas(self, allowed: frozenset[str] | None = None) -> list[dict]:
         """OpenAI-function-calling-shaped tool schemas - the one format chat_service and the
@@ -77,3 +100,11 @@ async def register_mcp_servers() -> None:
             logger.info("Registered %d tool(s) from Tavily MCP server", len(mcp_tools))
         except Exception:
             logger.exception("Failed to connect to Tavily MCP server - its tools are unavailable")
+
+    global _playwright_tool_defs
+    try:
+        _playwright_tool_defs = await discover_playwright_tools()
+        set_browser_agent_tools(frozenset(d.name for d in _playwright_tool_defs))
+        logger.info("Discovered %d browser automation tool(s) via Playwright MCP", len(_playwright_tool_defs))
+    except Exception:
+        logger.exception("Failed to discover Playwright MCP tools - browser automation is unavailable")

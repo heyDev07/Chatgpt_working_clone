@@ -17,6 +17,10 @@ node_modules/
 out/
 npm-debug.log*
 
+# Playwright MCP (Phase 9f) - snapshot/output files written wherever the `npx @playwright/mcp`
+# subprocess is launched from (backend/), not app output
+.playwright-mcp/
+
 # OS
 .DS_Store
 

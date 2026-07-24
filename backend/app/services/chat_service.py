@@ -22,7 +22,9 @@ from app.repositories.message_repo import MessageRepository
 from app.services.agent_coordinator import classify_agent
 from app.services.memory_extraction import run_memory_extraction
 from app.services.title_generation import run_title_generation
-from app.tools.registry import get_tool_registry
+from app.tools.base import ToolResult
+from app.tools.browser import PlaywrightBrowserSession
+from app.tools.registry import build_playwright_tools, get_tool_registry
 from app.tools.router import ToolRouter
 from app.vectorstore.qdrant_client import search as search_document_chunks
 
@@ -333,7 +335,16 @@ class ChatService:
         if conversation.top_p is not None:
             generation_kwargs["top_p"] = conversation.top_p
 
-        tool_registry = get_tool_registry()
+        # A fresh browser session per turn, not per call - Playwright's tools only make sense
+        # against the same open tab (navigate, then click, then screenshot), so this is
+        # constructed once here and shared by every browser_* tool wrapper for the whole
+        # tool-calling loop below, then torn down unconditionally in the finally block.
+        # Constructing it is free (no subprocess spawned yet - see PlaywrightBrowserSession);
+        # merging it into every turn's registry, not just "browser" agent turns, keeps this
+        # simple and relies on allowed_tools filtering (schema-build below, and enforced again
+        # at call-time further down) to keep it out of other agents' reach.
+        browser_session = PlaywrightBrowserSession()
+        tool_registry = get_tool_registry().child_with(build_playwright_tools(browser_session))
         tool_router = ToolRouter(self.db, tool_registry)
         tool_schemas = tool_registry.list_openai_tool_schemas(allowed=agent_def.allowed_tools) or None
 
@@ -374,7 +385,18 @@ class ChatService:
                             "event": "tool_call",
                             "data": {"id": tool_call.id, "name": tool_call.name, "arguments": arguments},
                         }
-                        result = await tool_router.call(conversation.user_id, tool_call.name, arguments)
+                        # tool_schemas above already excludes a not-allowed tool from what the
+                        # provider was offered, but a provider isn't obligated to only ever
+                        # return names it was given (and a prompt-injected tool result could try
+                        # to coerce one) - this is the actual enforcement boundary, checked right
+                        # before anything executes, not just what's advertised.
+                        if agent_def.allowed_tools is not None and tool_call.name not in agent_def.allowed_tools:
+                            result = ToolResult(
+                                success=False,
+                                error=f"Tool '{tool_call.name}' is not available to the '{agent_def.name}' agent",
+                            )
+                        else:
+                            result = await tool_router.call(conversation.user_id, tool_call.name, arguments)
                         yield {
                             "event": "tool_result",
                             "data": {
@@ -414,6 +436,13 @@ class ChatService:
             finish_reason = "cancelled"
             raise
         finally:
+            # Unconditional and shielded: a browser subprocess started mid-turn must be killed
+            # whether the turn finished normally, errored, hit MAX_TOOL_ITERATIONS, or the client
+            # disconnected - it's never allowed to outlive this request. aclose() is a no-op if
+            # browser_navigate/etc. was never actually called (no subprocess was ever spawned).
+            with anyio.CancelScope(shield=True):
+                await browser_session.aclose()
+
             assistant_message = None
             if full_content:
                 # The cleanup below must run even though the enclosing scope may already be
