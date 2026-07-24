@@ -1,9 +1,10 @@
 "use client";
 
-import { Check, Copy, Pencil, RotateCw, Sparkles, ThumbsDown, ThumbsUp } from "lucide-react";
-import { useState, type KeyboardEvent } from "react";
+import { Check, Copy, Pencil, RotateCw, Sparkles, ThumbsDown, ThumbsUp, Volume2, VolumeX } from "lucide-react";
+import { useEffect, useState, type KeyboardEvent } from "react";
 
 import { agentLabel } from "@/lib/agents";
+import { isSpeechSynthesisSupported, speakText, stopSpeaking } from "@/lib/speech";
 import type { Message } from "@/lib/types";
 
 import { AttachmentImage } from "./AttachmentImage";
@@ -27,11 +28,31 @@ export function MessageBubble({
   const [copied, setCopied] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [draft, setDraft] = useState(message.content);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+
+  // Stop this message's speech if it unmounts mid-utterance (e.g. switching conversations) -
+  // otherwise the browser keeps reading a message that's no longer even on screen.
+  useEffect(() => {
+    return () => {
+      if (isSpeaking) stopSpeaking();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- unmount-only cleanup
+  }, []);
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(message.content);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
+  };
+
+  const toggleSpeaking = () => {
+    if (isSpeaking) {
+      stopSpeaking();
+      setIsSpeaking(false);
+      return;
+    }
+    setIsSpeaking(true);
+    speakText(message.content, () => setIsSpeaking(false));
   };
 
   const startEdit = () => {
@@ -139,7 +160,7 @@ export function MessageBubble({
         {!isStreaming && message.content && (
           <div
             className={`mt-1 flex items-center gap-3 group-hover:opacity-100 ${
-              message.feedback ? "opacity-100" : "opacity-0"
+              message.feedback || isSpeaking ? "opacity-100" : "opacity-0"
             }`}
           >
             <button
@@ -150,6 +171,20 @@ export function MessageBubble({
               {copied ? <Check size={13} /> : <Copy size={13} />}
               {copied ? "Copied" : "Copy"}
             </button>
+            {isSpeechSynthesisSupported() && (
+              <button
+                onClick={toggleSpeaking}
+                aria-label={isSpeaking ? "Stop reading aloud" : "Read aloud"}
+                className={`flex items-center gap-1 text-xs ${
+                  isSpeaking
+                    ? "text-blue-600 dark:text-blue-400"
+                    : "text-black/40 hover:text-black dark:text-white/40 dark:hover:text-white"
+                }`}
+              >
+                {isSpeaking ? <VolumeX size={13} /> : <Volume2 size={13} />}
+                {isSpeaking ? "Stop" : "Read aloud"}
+              </button>
+            )}
             {onRegenerate && (
               <button
                 onClick={onRegenerate}
