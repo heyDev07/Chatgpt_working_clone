@@ -81,6 +81,33 @@ export function startSpeechRecognition(
   return { stop: () => recognition.stop() };
 }
 
+// The raw error codes (https://developer.mozilla.org/docs/Web/API/SpeechRecognitionErrorEvent/error)
+// are accurate but not self-explanatory. "network" in particular is what Brave reports - as of a
+// still-open Brave bug (github.com/brave/brave-browser/issues/55414, filed May 2026), its
+// on-device speech recognition hangs indefinitely in a "downloading" state that never resolves,
+// so the legacy webkitSpeechRecognition path falls through to this error. Not a settings fix -
+// genuinely broken upstream in Brave right now, not something this app (or the user) can work
+// around from privacy settings.
+export function describeSpeechError(error: string): string {
+  switch (error) {
+    case "not-allowed":
+    case "permission-denied":
+      return "Microphone access was denied. Allow microphone access for this site and try again.";
+    case "service-not-allowed":
+      return "This browser's speech recognition service is disabled or unavailable. Try Chrome or Edge.";
+    case "network":
+      return "Voice input isn't working in this browser right now - this is a known, currently " +
+        "unresolved bug in Brave's speech recognition (not something fixable via settings). " +
+        "Use Chrome or Edge for voice input instead.";
+    case "no-speech":
+      return "No speech was detected. Try again.";
+    case "audio-capture":
+      return "No microphone was found.";
+    default:
+      return `Voice input failed (${error}).`;
+  }
+}
+
 export function speakText(text: string, onEnd: () => void): void {
   if (!isSpeechSynthesisSupported()) {
     onEnd();

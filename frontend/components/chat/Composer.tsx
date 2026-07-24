@@ -4,7 +4,12 @@ import { ArrowUp, ImagePlus, Mic, Square, X } from "lucide-react";
 import { useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
 
 import { uploadAttachment } from "@/lib/api/attachments";
-import { isSpeechRecognitionSupported, startSpeechRecognition, type RecognitionHandle } from "@/lib/speech";
+import {
+  describeSpeechError,
+  isSpeechRecognitionSupported,
+  startSpeechRecognition,
+  type RecognitionHandle,
+} from "@/lib/speech";
 
 interface PendingAttachment {
   id: string;
@@ -25,6 +30,7 @@ export function Composer({
   const [pending, setPending] = useState<PendingAttachment[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [isListening, setIsListening] = useState(false);
+  const [speechError, setSpeechError] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<RecognitionHandle | null>(null);
@@ -61,6 +67,7 @@ export function Composer({
       return;
     }
 
+    setSpeechError(null);
     baseValueRef.current = value;
     const handle = startSpeechRecognition(
       (transcript, isFinal) => {
@@ -73,9 +80,10 @@ export function Composer({
         recognitionRef.current = null;
         setIsListening(false);
       },
-      () => {
+      (error) => {
         recognitionRef.current = null;
         setIsListening(false);
+        setSpeechError(describeSpeechError(error));
       }
     );
     if (handle) {
@@ -214,6 +222,9 @@ export function Composer({
             )}
           </div>
         </div>
+        {speechError && (
+          <p className="mt-2 text-center text-xs text-red-500">{speechError}</p>
+        )}
         <p className="mt-2 text-center text-xs text-black/30 dark:text-white/30">
           AI can make mistakes. Check important info.
         </p>
