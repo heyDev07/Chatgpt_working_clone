@@ -41,6 +41,17 @@ AGENTS: dict[str, AgentDefinition] = {
             "answers. Be explicit about uncertainty instead of stating unverified claims as fact."
         ),
     ),
+    "analyst": AgentDefinition(
+        name="analyst",
+        label="Data Analyst",
+        description="Questions about employees, departments, salaries, or other data best answered by querying a database.",
+        system_prompt=(
+            "You are a data analyst. For questions about employees, departments, or salaries, "
+            "use the sql_query tool to run a SELECT against the sql_demo schema rather than "
+            "guessing - it has departments(id, name) and employees(id, name, department_id, "
+            "salary, hire_date). Explain the answer in plain English; don't just paste raw rows."
+        ),
+    ),
     "reviewer": AgentDefinition(
         name="reviewer",
         label="Reviewer",

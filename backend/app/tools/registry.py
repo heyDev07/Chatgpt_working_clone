@@ -6,6 +6,7 @@ from app.mcp.client import list_mcp_tools
 from app.tools.base import BaseTool, ToolDefinition
 from app.tools.calculator import CalculatorTool
 from app.tools.mcp_tool import MCP_TOOL_TIMEOUT_SECONDS, MCPTool
+from app.tools.sql_query import SqlQueryTool
 
 logger = logging.getLogger("app.tools")
 
@@ -45,7 +46,7 @@ class ToolRegistry:
 
 @lru_cache
 def get_tool_registry() -> ToolRegistry:
-    return ToolRegistry([CalculatorTool()])
+    return ToolRegistry([CalculatorTool(), SqlQueryTool()])
 
 
 async def register_mcp_servers() -> None:

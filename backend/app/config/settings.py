@@ -41,6 +41,11 @@ class Settings(BaseSettings):
     tavily_api_key: str = ""
     tavily_mcp_url: str = "https://mcp.tavily.com/mcp/"
 
+    # SQL database chat (Phase 9g): a dedicated Postgres role, granted SELECT on the sql_demo
+    # schema only (see the 0eb2d0957976 migration), is the enforcement boundary the LLM-generated
+    # SQL runs under - query-string validation in the tool is a second layer, not the only one.
+    sql_demo_db_password: str = "sql_demo_readonly_pw"
+
     # CORS
     cors_origins: str = "http://localhost:3000"
 
