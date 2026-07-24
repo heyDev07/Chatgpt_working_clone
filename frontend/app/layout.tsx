@@ -29,7 +29,12 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
       suppressHydrationWarning
     >
-      <body className="min-h-full flex flex-col">
+      {/* h-full (not min-h-full) + overflow-hidden pins the body to exactly the viewport height,
+          so a long chat can never grow the page itself - every route already manages its own
+          overflow-y-auto region (the chat message list, the sidebar's conversation list, the
+          shared-page transcript), and without this cap the body would grow past the viewport
+          and the whole page - sidebar included - would scroll together as one unit. */}
+      <body className="h-full flex flex-col overflow-hidden">
         {/* Blocking script (runs before paint) so the stored theme applies immediately -
             without this, the page would flash the default light theme before React hydrates
             and ThemeProvider's effect runs. suppressHydrationWarning above because this script
