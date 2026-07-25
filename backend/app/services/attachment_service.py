@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.exceptions import NotFoundError, StorageError, ValidationAppError
 from app.models.message_attachment import MessageAttachment
 from app.repositories.message_attachment_repo import MessageAttachmentRepository
-from app.storage.s3_client import download_bytes, upload_bytes
+from app.storage.s3_client import download_bytes, safe_storage_filename, upload_bytes
 
 ALLOWED_IMAGE_CONTENT_TYPES = {"image/png", "image/jpeg", "image/webp", "image/gif"}
 MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024  # 10MB
@@ -37,7 +37,7 @@ class AttachmentService:
             size_bytes=len(data),
             storage_key="",  # set below once the attachment id is known
         )
-        attachment.storage_key = f"attachments/{user_id}/{attachment.id}/{attachment.filename}"
+        attachment.storage_key = f"attachments/{user_id}/{attachment.id}/{safe_storage_filename(attachment.filename)}"
 
         try:
             await upload_bytes(attachment.storage_key, data, content_type)

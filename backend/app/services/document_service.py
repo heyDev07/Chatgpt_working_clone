@@ -9,7 +9,7 @@ from app.models.document import Document
 from app.providers.provider_manager import ProviderManager
 from app.repositories.document_repo import DocumentRepository
 from app.services.document_processing import run_document_processing
-from app.storage.s3_client import delete_object, upload_bytes
+from app.storage.s3_client import delete_object, safe_storage_filename, upload_bytes
 from app.vectorstore.qdrant_client import delete_document_chunks
 
 ALLOWED_CONTENT_TYPES = {
@@ -48,7 +48,7 @@ class DocumentService:
             size_bytes=len(data),
             storage_key="",  # set below once the document id is known
         )
-        document.storage_key = f"{user_id}/{document.id}/{document.filename}"
+        document.storage_key = f"{user_id}/{document.id}/{safe_storage_filename(document.filename)}"
 
         try:
             await upload_bytes(document.storage_key, data, content_type)

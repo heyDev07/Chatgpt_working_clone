@@ -374,12 +374,17 @@ class ChatService:
         # against the same open tab (navigate, then click, then screenshot), so this is
         # constructed once here and shared by every browser_* tool wrapper for the whole
         # tool-calling loop below, then torn down unconditionally in the finally block.
-        # Constructing it is free (no subprocess spawned yet - see PlaywrightBrowserSession);
-        # merging it into every turn's registry, not just "browser" agent turns, keeps this
-        # simple and relies on allowed_tools filtering (schema-build below, and enforced again
-        # at call-time further down) to keep it out of other agents' reach.
-        browser_session = PlaywrightBrowserSession()
-        tool_registry = get_tool_registry().child_with(build_playwright_tools(browser_session))
+        # Merged into the registry ONLY for the "browser" agent - allowed_tools=None on every
+        # other agent means "no restriction", not "restricted to non-browser tools", so merging
+        # unconditionally would silently make every browser_* tool (including
+        # browser_file_upload, which can read arbitrary files within the server's working
+        # directory - see PLAYWRIGHT_ARGS' cwd) reachable from "general"/"coding"/etc too,
+        # defeating the entire point of a dedicated scoped persona.
+        tool_registry = get_tool_registry()
+        browser_session: PlaywrightBrowserSession | None = None
+        if selected_agent == "browser":
+            browser_session = PlaywrightBrowserSession()
+            tool_registry = tool_registry.child_with(build_playwright_tools(browser_session))
         tool_router = ToolRouter(self.db, tool_registry)
         tool_schemas = tool_registry.list_openai_tool_schemas(allowed=agent_def.allowed_tools) or None
 
@@ -475,8 +480,9 @@ class ChatService:
             # whether the turn finished normally, errored, hit MAX_TOOL_ITERATIONS, or the client
             # disconnected - it's never allowed to outlive this request. aclose() is a no-op if
             # browser_navigate/etc. was never actually called (no subprocess was ever spawned).
-            with anyio.CancelScope(shield=True):
-                await browser_session.aclose()
+            if browser_session is not None:
+                with anyio.CancelScope(shield=True):
+                    await browser_session.aclose()
 
             assistant_message = None
             if full_content:

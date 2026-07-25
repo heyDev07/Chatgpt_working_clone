@@ -3,8 +3,9 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db, get_redis
+from app.config.settings import get_settings
 from app.core.exceptions import AuthError
-from app.middleware.rate_limit import login_rate_limiter
+from app.middleware.rate_limit import login_rate_limiter, register_rate_limiter
 from app.models.user import User
 from app.schemas.auth import DeleteAccountRequest, LoginRequest, RegisterRequest, TokenResponse, UserOut
 from app.services.auth_service import AuthService
@@ -20,13 +21,23 @@ def _set_refresh_cookie(response: Response, token: str) -> None:
         value=token,
         httponly=True,
         samesite="lax",
-        secure=False,  # local dev over http; set True behind HTTPS in production
+        secure=get_settings().is_production,
         path="/api/v1/auth",
     )
 
 
 @router.post("/register", response_model=UserOut, status_code=201)
-async def register(payload: RegisterRequest, db: AsyncSession = Depends(get_db)) -> User:
+async def register(
+    payload: RegisterRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    redis: Redis = Depends(get_redis),
+) -> User:
+    # No user identity exists yet to key a limiter on - IP is the only identifier available,
+    # same reasoning as any other pre-auth endpoint.
+    identifier = request.client.host if request.client else "unknown"
+    await register_rate_limiter.check(redis, identifier=identifier)
+
     service = AuthService(db)
     return await service.register(payload.email, payload.password, payload.full_name)
 

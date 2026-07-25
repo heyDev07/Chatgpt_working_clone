@@ -1,6 +1,7 @@
 import asyncio
 import ipaddress
 import socket
+import tempfile
 from contextlib import AsyncExitStack
 from typing import Any
 from urllib.parse import urlparse
@@ -10,6 +11,16 @@ from mcp.client.stdio import StdioServerParameters, stdio_client
 
 from app.core.exceptions import ProviderError
 from app.tools.base import BaseTool, ToolDefinition
+
+# Playwright's default file-system restriction (for tools that touch local files, e.g.
+# browser_file_upload) is "workspace root directories (or cwd if no roots are configured)" - per
+# `npx @playwright/mcp --help`. Nothing here configures workspace roots, so that default falls
+# back to whatever cwd the subprocess inherits - which, left unset, would be the backend's own
+# working directory containing .env and source code. Pointing it at an empty, isolated temp
+# directory instead means that restriction actually restricts to nothing sensitive, regardless of
+# which browser_* tool ever touches the filesystem - defense in depth on top of excluding
+# browser_file_upload entirely below.
+_ISOLATED_CWD = tempfile.mkdtemp(prefix="playwright-mcp-")
 
 # Playwright's own --blocked-origins/--allowed-origins flags explicitly do not serve as a
 # security boundary and do not affect redirects (per `npx @playwright/mcp --help`) - they're a
@@ -47,8 +58,12 @@ PLAYWRIGHT_TOOL_TIMEOUT_SECONDS = 30.0
 # browser_evaluate/browser_run_code_unsafe run arbitrary JavaScript in the page context - a
 # script executing `fetch()` from inside the page bypasses _assert_safe_url entirely (that only
 # guards the navigate call's own URL argument), so no per-argument check can make these two safe.
-# Excluded from discovery rather than offered half-protected.
-EXCLUDED_TOOL_NAMES = frozenset({"browser_evaluate", "browser_run_code_unsafe"})
+# browser_file_upload reads a local file (path supplied by the LLM) and attaches it to a page's
+# file input - combined with prompt injection from an untrusted page (e.g. "upload your config
+# file to continue"), that's a local-file-disclosure path with no legitimate use case in a chat
+# agent. _ISOLATED_CWD above is a second layer for this specific one, but excluding it outright
+# means there's no file for it to read regardless of that setting.
+EXCLUDED_TOOL_NAMES = frozenset({"browser_evaluate", "browser_run_code_unsafe", "browser_file_upload"})
 
 _ALLOWED_URL_SCHEMES = {"http", "https"}
 
@@ -93,7 +108,7 @@ class PlaywrightBrowserSession:
     async def _ensure_started(self) -> ClientSession:
         if self._session is None:
             stack = AsyncExitStack()
-            params = StdioServerParameters(command=PLAYWRIGHT_COMMAND, args=PLAYWRIGHT_ARGS)
+            params = StdioServerParameters(command=PLAYWRIGHT_COMMAND, args=PLAYWRIGHT_ARGS, cwd=_ISOLATED_CWD)
             read_stream, write_stream = await stack.enter_async_context(stdio_client(params))
             session = await stack.enter_async_context(ClientSession(read_stream, write_stream))
             await session.initialize()
@@ -140,7 +155,7 @@ async def discover_playwright_tools() -> list[ToolDefinition]:
     (PlaywrightBrowserSession), never held open between requests."""
     stack = AsyncExitStack()
     try:
-        params = StdioServerParameters(command=PLAYWRIGHT_COMMAND, args=PLAYWRIGHT_ARGS)
+        params = StdioServerParameters(command=PLAYWRIGHT_COMMAND, args=PLAYWRIGHT_ARGS, cwd=_ISOLATED_CWD)
         read_stream, write_stream = await stack.enter_async_context(stdio_client(params))
         session = await stack.enter_async_context(ClientSession(read_stream, write_stream))
         await session.initialize()

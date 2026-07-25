@@ -6,6 +6,11 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
+    # "development" (the default) or "production" - drives environment-sensitive behavior like
+    # the refresh cookie's Secure flag (auth.py), instead of that being a hardcoded value someone
+    # has to remember to flip by hand before a real deployment.
+    environment: str = "development"
+
     # Database / cache
     database_url: str = "postgresql+asyncpg://ai_assistant:ai_assistant@localhost:5432/ai_assistant"
     redis_url: str = "redis://localhost:6379/0"
@@ -52,6 +57,10 @@ class Settings(BaseSettings):
     @property
     def cors_origins_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+
+    @property
+    def is_production(self) -> bool:
+        return self.environment == "production"
 
 
 @lru_cache

@@ -1,9 +1,11 @@
 import uuid
 
 from fastapi import APIRouter, Depends, File, UploadFile
+from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, get_db, get_provider_manager
+from app.api.deps import get_current_user, get_db, get_provider_manager, get_redis
+from app.middleware.rate_limit import upload_rate_limiter
 from app.models.user import User
 from app.providers.provider_manager import ProviderManager
 from app.schemas.document import DocumentOut
@@ -24,7 +26,11 @@ async def upload_document(
     file: UploadFile = File(...),
     current_user: User = Depends(get_current_user),
     service: DocumentService = Depends(_get_service),
+    redis: Redis = Depends(get_redis),
 ):
+    # Parsing + embedding a document costs real compute (and, for the embedding call, real API
+    # spend) - this endpoint had no rate limit at all before, unlike message sends.
+    await upload_rate_limiter.check(redis, identifier=str(current_user.id))
     return await service.upload(current_user.id, file)
 
 

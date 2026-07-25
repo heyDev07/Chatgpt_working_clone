@@ -22,3 +22,14 @@ class RateLimiter:
 
 login_rate_limiter = RateLimiter(key_prefix="login", max_requests=10, window_seconds=60)
 message_rate_limiter = RateLimiter(key_prefix="message", max_requests=20, window_seconds=60)
+# Unauthenticated - registration has no user identity yet to key on, so the limiter is applied
+# per-IP instead (see auth.py). A generous window: this is anti-automation, not anti-abuse of an
+# already-known account.
+register_rate_limiter = RateLimiter(key_prefix="register", max_requests=5, window_seconds=300)
+# Every tool call is a real resource cost - an external API request (Tavily), a spawned headless
+# Chromium process (Playwright), or a DB query (sql_query) - none of which the calculator-only
+# assumption this endpoint originally shipped under accounted for.
+tool_call_rate_limiter = RateLimiter(key_prefix="tool_call", max_requests=30, window_seconds=60)
+# Document parsing/embedding and image storage both cost real compute/storage - same reasoning
+# as tool calls above.
+upload_rate_limiter = RateLimiter(key_prefix="upload", max_requests=20, window_seconds=60)

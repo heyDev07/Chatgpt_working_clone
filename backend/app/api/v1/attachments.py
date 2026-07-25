@@ -2,9 +2,11 @@ import uuid
 
 from fastapi import APIRouter, Depends, File, UploadFile
 from fastapi.responses import Response
+from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, get_db
+from app.api.deps import get_current_user, get_db, get_redis
+from app.middleware.rate_limit import upload_rate_limiter
 from app.models.user import User
 from app.schemas.attachment import AttachmentOut
 from app.services.attachment_service import AttachmentService
@@ -17,7 +19,9 @@ async def upload_attachment(
     file: UploadFile = File(...),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    redis: Redis = Depends(get_redis),
 ):
+    await upload_rate_limiter.check(redis, identifier=str(current_user.id))
     return await AttachmentService(db).upload(current_user.id, file)
 
 
