@@ -1,0 +1,38 @@
+# Optional third overlay - run alongside the base infra file (and, if using the containerized
+# app, docker-compose.prod.yml too):
+#   docker compose -f docker-compose.yml -f docker-compose.monitoring.yml up -d
+#
+# Prometheus scrapes host.docker.internal:8000 by default (this project's primary dev workflow:
+# backend run directly on the host via uvicorn) - see monitoring/prometheus.yml for the
+# containerized-backend alternative.
+services:
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    container_name: ai-assistant-prometheus
+    restart: unless-stopped
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+
+  grafana:
+    image: grafana/grafana:11.3.1
+    container_name: ai-assistant-grafana
+    restart: unless-stopped
+    environment:
+      # Change before any real deployment - this is a local-dev default, not a production value.
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "3001:3000" # 3000 is already the frontend's port, both locally and in docker-compose.prod.yml
+    depends_on:
+      - prometheus
+
+volumes:
+  prometheus_data:
+  grafana_data:

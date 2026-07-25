@@ -10,6 +10,9 @@ class Settings(BaseSettings):
     # the refresh cookie's Secure flag (auth.py), instead of that being a hardcoded value someone
     # has to remember to flip by hand before a real deployment.
     environment: str = "development"
+    # "text" (default, readable in a terminal) or "json" (structured, for a log shipper to
+    # parse) - see app/core/logging_config.py.
+    log_format: str = "text"
 
     # Database / cache
     database_url: str = "postgresql+asyncpg://ai_assistant:ai_assistant@localhost:5432/ai_assistant"

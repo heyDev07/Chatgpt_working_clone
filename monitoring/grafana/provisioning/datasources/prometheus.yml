@@ -1,0 +1,12 @@
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    # Explicit, not auto-generated - the dashboard JSON (app-overview.json) references this exact
+    # string in every panel's datasource block. Without pinning it here, Grafana would generate a
+    # random UID on first provision and every panel would fail to resolve its datasource.
+    uid: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true

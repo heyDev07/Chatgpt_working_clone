@@ -25,5 +25,14 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
             response.status_code,
             duration_ms,
             request_id,
+            # Ignored by the plain-text formatter (unaffected local dev output) but merged into
+            # real, queryable JSON fields under LOG_FORMAT=json - see logging_config.py.
+            extra={
+                "request_id": request_id,
+                "http_method": request.method,
+                "http_path": request.url.path,
+                "http_status": response.status_code,
+                "duration_ms": round(duration_ms, 1),
+            },
         )
         return response

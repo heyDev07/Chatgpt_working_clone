@@ -47,4 +47,8 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# --no-access-log: RequestLoggingMiddleware (app/middleware/request_logging.py) already logs
+# every request in the app's own structured format (JSON in production, see
+# app/core/logging_config.py) - uvicorn's own access log would otherwise duplicate every request
+# a second time in its own, differently-formatted line.
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--no-access-log"]

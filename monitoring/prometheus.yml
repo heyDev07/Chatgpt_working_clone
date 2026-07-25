@@ -1,0 +1,16 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: backend
+    metrics_path: /metrics
+    static_configs:
+      # host.docker.internal: this project's primary dev workflow runs the backend directly on
+      # the host (uvicorn) with only infra dockerized (docker-compose.yml) - Docker Desktop's
+      # special DNS name for reaching the host from a container is what makes that reachable.
+      #
+      # Running the full containerized stack instead (docker-compose.prod.yml, Phase 16b) puts a
+      # real `backend` service on the same Compose network - swap the target below to
+      # "backend:8000" in that case, or add it as a second target (Prometheus tolerates one
+      # target being unreachable, it just marks that job "down" without affecting the other).
+      - targets: ["host.docker.internal:8000"]

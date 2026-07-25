@@ -6,6 +6,7 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import NotFoundError
+from app.core.metrics import tool_call_duration_seconds, tool_calls_total
 from app.repositories.tool_call_log_repo import ToolCallLogRepository
 from app.tools.base import ToolResult
 from app.tools.registry import ToolRegistry
@@ -30,19 +31,28 @@ class ToolRouter:
         started = time.monotonic()
         try:
             output = await asyncio.wait_for(tool.run(**arguments), timeout=tool.definition.timeout_seconds)
-            duration_ms = int((time.monotonic() - started) * 1000)
+            duration = time.monotonic() - started
+            duration_ms = int(duration * 1000)
             await self.logs.create(user_id, tool_name, arguments, success=True, duration_ms=duration_ms, output=output)
             await self.db.commit()
+            tool_calls_total.labels(tool_name=tool_name, success="true").inc()
+            tool_call_duration_seconds.labels(tool_name=tool_name).observe(duration)
             return ToolResult(success=True, output=output)
         except asyncio.TimeoutError:
-            duration_ms = int((time.monotonic() - started) * 1000)
+            duration = time.monotonic() - started
+            duration_ms = int(duration * 1000)
             error = f"Tool '{tool_name}' timed out after {tool.definition.timeout_seconds}s"
             await self.logs.create(user_id, tool_name, arguments, success=False, duration_ms=duration_ms, error_message=error)
             await self.db.commit()
+            tool_calls_total.labels(tool_name=tool_name, success="false").inc()
+            tool_call_duration_seconds.labels(tool_name=tool_name).observe(duration)
             return ToolResult(success=False, error=error)
         except Exception as exc:
-            duration_ms = int((time.monotonic() - started) * 1000)
+            duration = time.monotonic() - started
+            duration_ms = int(duration * 1000)
             error = str(exc)
             await self.logs.create(user_id, tool_name, arguments, success=False, duration_ms=duration_ms, error_message=error)
             await self.db.commit()
+            tool_calls_total.labels(tool_name=tool_name, success="false").inc()
+            tool_call_duration_seconds.labels(tool_name=tool_name).observe(duration)
             return ToolResult(success=False, error=error)

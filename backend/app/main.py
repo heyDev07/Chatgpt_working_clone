@@ -1,13 +1,14 @@
-import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from prometheus_fastapi_instrumentator import Instrumentator
 from sqlalchemy import text
 
 from app import models  # noqa: F401 - ensures all models are registered before relationships resolve
 from app.config.settings import get_settings
+from app.core.logging_config import configure_logging
 from app.db.database import engine
 from app.db.redis_client import get_redis
 from app.middleware.error_handler import register_error_handlers
@@ -16,7 +17,7 @@ from app.storage.s3_client import ensure_bucket_exists
 from app.tools.registry import register_mcp_servers
 from app.vectorstore.qdrant_client import ensure_collection
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+configure_logging()
 
 
 @asynccontextmanager
@@ -56,6 +57,14 @@ def create_app() -> FastAPI:
     @app.get("/health")
     async def health() -> dict:
         return {"status": "ok"}
+
+    # Standard HTTP metrics (request count/latency/in-progress, labeled by method+templated-path
+    # +status) - should_group_untemplated collapses /conversations/{id} variants into one series
+    # instead of one per UUID, which would otherwise make this endpoint's cardinality unbounded.
+    # Custom LLM/tool-call metrics (app/core/metrics.py) share the same /metrics endpoint and
+    # registry - they're recorded directly at their call sites (chat_service.py, tools/router.py),
+    # not through this instrumentator.
+    Instrumentator().instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
 
     return app
 

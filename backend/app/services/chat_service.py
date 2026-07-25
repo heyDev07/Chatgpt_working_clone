@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import time
 import uuid
 from collections.abc import AsyncIterator
 
@@ -10,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.agents.definitions import DEFAULT_AGENT, get_agent
 from app.config.settings import get_settings
 from app.core.exceptions import NotFoundError, ProviderError
+from app.core.metrics import llm_request_duration_seconds, llm_requests_total, llm_tokens_total
 from app.models.conversation import Conversation
 from app.models.message import Message
 from app.providers.base_provider import ChatMessage, ImagePart
@@ -392,6 +394,7 @@ class ChatService:
         finish_reason = "stop"
         usage = None
         error_message: str | None = None
+        turn_started = time.monotonic()
         # generate_image already stores its bytes in S3 during the tool call itself (it has no
         # DB access - see image_generation.py) - this just accumulates what it reported so the
         # resulting MessageAttachment rows can be created once the assistant message they belong
@@ -523,6 +526,20 @@ class ChatService:
                         )
                     await self.conversations.touch(conversation)
                     await self.db.commit()
+
+            # Recorded regardless of outcome (including "error"/"cancelled" finish_reasons, when
+            # full_content was empty and nothing above even ran) - an operator watching this
+            # metric needs to see failed turns, not just successful ones.
+            llm_requests_total.labels(
+                provider=conversation.provider, model=conversation.model, finish_reason=finish_reason
+            ).inc()
+            llm_request_duration_seconds.labels(provider=conversation.provider, model=conversation.model).observe(
+                time.monotonic() - turn_started
+            )
+            if usage:
+                llm_tokens_total.labels(provider=conversation.provider, model=conversation.model).inc(
+                    usage.completion_tokens
+                )
 
         if error_message:
             yield {"event": "error", "data": {"code": "provider_error", "message": error_message}}
