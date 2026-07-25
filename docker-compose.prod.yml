@@ -1,0 +1,53 @@
+# Production overlay - adds the app's own two services (built from their Dockerfiles) on top of
+# the infra-only base file. Run both together with:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# Deliberately layered rather than a single combined file: `docker compose up` alone (just the
+# base file) still works unmodified for local dev, where backend/frontend run directly on the
+# host via uvicorn/npm run dev - the pattern used throughout this project - not in containers.
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: ai-assistant-backend
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      # Overrides whatever backend/.env has for these - container-to-container traffic uses
+      # Compose's service-name DNS, not localhost/the host-mapped ports .env is set up for.
+      DATABASE_URL: postgresql+asyncpg://ai_assistant:ai_assistant@postgres:5432/ai_assistant
+      REDIS_URL: redis://redis:6379/0
+      QDRANT_URL: http://qdrant:6333
+      S3_ENDPOINT_URL: http://minio:9000
+      ENVIRONMENT: production
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      # qdrant has no healthcheck defined in docker-compose.yml (nothing in its minimal image
+      # was verified to support one) - service_started is what's actually available to depend on.
+      qdrant:
+        condition: service_started
+      minio:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # Baked into the client bundle at build time (Next.js inlines NEXT_PUBLIC_* vars, they
+        # aren't read at container runtime) - override by setting this before `docker compose
+        # build`, e.g. for a real domain instead of localhost.
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000/api/v1}
+    container_name: ai-assistant-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "3000:3000"
