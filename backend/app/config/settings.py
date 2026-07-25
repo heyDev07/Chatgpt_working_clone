@@ -17,6 +17,15 @@ class Settings(BaseSettings):
     # Database / cache
     database_url: str = "postgresql+asyncpg://ai_assistant:ai_assistant@localhost:5432/ai_assistant"
     redis_url: str = "redis://localhost:6379/0"
+    # SQLAlchemy's own defaults (pool_size=5, max_overflow=10 -> 15 connections) were the actual
+    # bottleneck a real load test found (Phase 18) - 20/60s stayed under 30ms p95 with zero
+    # errors, but 100/30s showed tail latency climbing into the hundreds of ms with a fast median,
+    # the textbook signature of requests queueing for a pool connection rather than the app or DB
+    # actually struggling. 30 total per replica leaves headroom under Postgres's default
+    # max_connections=100 for multiple ECS replicas (Terraform's backend_desired_count) without
+    # needing per-deployment tuning for a single-replica default.
+    db_pool_size: int = 20
+    db_max_overflow: int = 10
 
     # Auth
     jwt_secret_key: str = "change-me"
