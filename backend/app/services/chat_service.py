@@ -392,6 +392,11 @@ class ChatService:
         finish_reason = "stop"
         usage = None
         error_message: str | None = None
+        # generate_image already stores its bytes in S3 during the tool call itself (it has no
+        # DB access - see image_generation.py) - this just accumulates what it reported so the
+        # resulting MessageAttachment rows can be created once the assistant message they belong
+        # to actually exists, in the finally block below.
+        generated_attachments: list[dict] = []
 
         try:
             for iteration in range(MAX_TOOL_ITERATIONS):
@@ -447,6 +452,11 @@ class ChatService:
                                 "error": result.error,
                             },
                         }
+                        if tool_call.name == "generate_image" and result.success:
+                            try:
+                                generated_attachments.append(json.loads(result.output))
+                            except (json.JSONDecodeError, TypeError):
+                                pass  # malformed output shouldn't break the turn, just the image
                         chat_messages.append(
                             ChatMessage(
                                 role="tool",
@@ -499,6 +509,18 @@ class ChatService:
                         token_count=usage.completion_tokens if usage else None,
                         agent=selected_agent,
                     )
+                    for generated in generated_attachments:
+                        storage_key = generated.get("storage_key")
+                        if not storage_key:
+                            continue  # malformed tool output - image bytes never got stored
+                        await self.attachments.create_for_message(
+                            user_id=conversation.user_id,
+                            message_id=assistant_message.id,
+                            filename=generated.get("filename", "generated-image.jpg"),
+                            content_type=generated.get("content_type", "image/jpeg"),
+                            size_bytes=generated.get("size_bytes", 0),
+                            storage_key=storage_key,
+                        )
                     await self.conversations.touch(conversation)
                     await self.db.commit()
 

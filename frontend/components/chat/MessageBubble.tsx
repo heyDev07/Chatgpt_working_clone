@@ -157,6 +157,13 @@ export function MessageBubble({
           <MarkdownContent content={message.content} />
           {isStreaming && <StreamingCursor />}
         </div>
+        {message.attachments && message.attachments.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-2">
+            {message.attachments.map((a) => (
+              <AttachmentImage key={a.id} id={a.id} alt={a.filename} />
+            ))}
+          </div>
+        )}
         {!isStreaming && message.content && (
           <div
             className={`mt-1 flex items-center gap-3 group-hover:opacity-100 ${

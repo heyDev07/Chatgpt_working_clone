@@ -24,6 +24,30 @@ class MessageAttachmentRepository:
         await self.db.flush()
         return attachment
 
+    async def create_for_message(
+        self,
+        user_id: uuid.UUID,
+        message_id: uuid.UUID,
+        filename: str,
+        content_type: str,
+        size_bytes: int,
+        storage_key: str,
+    ) -> MessageAttachment:
+        """For attachments that never went through the upload endpoint - an assistant-generated
+        image (generate_image tool) already has bytes in S3 and a message to attach to by the
+        time this is called, unlike a user upload's create()-then-attach_to_message() two-step."""
+        attachment = MessageAttachment(
+            user_id=user_id,
+            message_id=message_id,
+            filename=filename,
+            content_type=content_type,
+            size_bytes=size_bytes,
+            storage_key=storage_key,
+        )
+        self.db.add(attachment)
+        await self.db.flush()
+        return attachment
+
     async def get_for_user(self, attachment_id: uuid.UUID, user_id: uuid.UUID) -> MessageAttachment | None:
         result = await self.db.execute(
             select(MessageAttachment).where(

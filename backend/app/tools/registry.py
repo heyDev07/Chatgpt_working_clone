@@ -7,6 +7,7 @@ from app.mcp.client import list_mcp_tools
 from app.tools.base import BaseTool, ToolDefinition
 from app.tools.browser import PlaywrightBrowserSession, PlaywrightMCPTool, discover_playwright_tools
 from app.tools.calculator import CalculatorTool
+from app.tools.image_generation import GenerateImageTool
 from app.tools.mcp_tool import MCP_TOOL_TIMEOUT_SECONDS, MCPTool
 from app.tools.sql_query import SqlQueryTool
 
@@ -69,7 +70,7 @@ class ToolRegistry:
 
 @lru_cache
 def get_tool_registry() -> ToolRegistry:
-    return ToolRegistry([CalculatorTool(), SqlQueryTool()])
+    return ToolRegistry([CalculatorTool(), SqlQueryTool(), GenerateImageTool()])
 
 
 async def register_mcp_servers() -> None:
