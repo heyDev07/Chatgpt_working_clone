@@ -1,0 +1,20 @@
+# Copy to terraform.tfvars (gitignored) and fill in real values, or set the equivalent
+# TF_VAR_* environment variables instead - either way, never commit real secrets here.
+
+aws_region   = "us-east-1"
+project_name = "ai-assistant"
+environment  = "production"
+
+db_password           = "change-me"
+jwt_secret_key        = "change-me-to-a-long-random-string"
+sql_demo_db_password  = "change-me"
+
+# Optional - blank disables that provider/tool the same way it does locally (see backend/.env.example)
+openai_api_key = ""
+gemini_api_key = ""
+tavily_api_key = ""
+
+# Leave unset on a first apply (creates the ECR repos with no image pushed yet); set both after
+# pushing real images, or use the ECR repository URL outputs directly.
+# backend_image  = "123456789012.dkr.ecr.us-east-1.amazonaws.com/ai-assistant/backend:latest"
+# frontend_image = "123456789012.dkr.ecr.us-east-1.amazonaws.com/ai-assistant/frontend:latest"

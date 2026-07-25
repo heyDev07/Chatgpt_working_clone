@@ -27,12 +27,14 @@ def safe_storage_filename(filename: str) -> str:
 @asynccontextmanager
 async def get_s3_client() -> AsyncIterator:
     settings = get_settings()
-    async with _session.client(
-        "s3",
-        endpoint_url=settings.s3_endpoint_url,
-        aws_access_key_id=settings.s3_access_key,
-        aws_secret_access_key=settings.s3_secret_key,
-    ) as client:
+    # endpoint_url=None (not passed at all) is what makes boto3 fall back to its own default AWS
+    # regional endpoint resolution - passing an empty string, or the MinIO-pointing local
+    # default, would either error or silently try to reach a local MinIO that doesn't exist on
+    # real AWS. Real deployments (see terraform/aws) leave S3_ENDPOINT_URL unset for this reason.
+    kwargs = {"aws_access_key_id": settings.s3_access_key, "aws_secret_access_key": settings.s3_secret_key}
+    if settings.s3_endpoint_url:
+        kwargs["endpoint_url"] = settings.s3_endpoint_url
+    async with _session.client("s3", **kwargs) as client:
         yield client
 
 
