@@ -174,7 +174,11 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
       const pending = JSON.parse(raw) as PendingFirstMessage;
       if (pending.conversationId === conversationId) {
         sessionStorage.removeItem(PENDING_FIRST_MESSAGE_KEY);
-        handleSend(pending.content, pending.attachmentIds);
+        // Deferred a tick rather than called directly: handleSend's first act is a setState
+        // (the optimistic pending-message append), and calling that synchronously inside an
+        // effect body risks a cascading render - queueMicrotask moves it out of the effect's
+        // own synchronous execution without any user-visible delay.
+        queueMicrotask(() => handleSend(pending.content, pending.attachmentIds));
       }
     } catch {
       sessionStorage.removeItem(PENDING_FIRST_MESSAGE_KEY);
