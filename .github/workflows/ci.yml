@@ -76,18 +76,28 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Docker image references must be all-lowercase, but this repo's owner/name
+      # (heyDev07/Chatgpt_working_clone) isn't - github.repository is used as-is verbatim, so
+      # every `docker tag`/`docker push` below was rejecting the reference outright. Confirmed
+      # live: the first two real runs of this workflow both had backend/frontend jobs pass and
+      # docker-build fail specifically at the push step, exactly the signature of this bug (a
+      # bad tag fails at tag/push time, not at build time, which is why build always succeeded).
+      - name: Compute lowercase image repository
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: echo "IMAGE_REPO=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
+
       - name: Push backend image
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
-          docker tag ai-assistant-backend:ci ghcr.io/${{ github.repository }}/backend:${{ github.sha }}
-          docker tag ai-assistant-backend:ci ghcr.io/${{ github.repository }}/backend:latest
-          docker push ghcr.io/${{ github.repository }}/backend:${{ github.sha }}
-          docker push ghcr.io/${{ github.repository }}/backend:latest
+          docker tag ai-assistant-backend:ci ghcr.io/${{ env.IMAGE_REPO }}/backend:${{ github.sha }}
+          docker tag ai-assistant-backend:ci ghcr.io/${{ env.IMAGE_REPO }}/backend:latest
+          docker push ghcr.io/${{ env.IMAGE_REPO }}/backend:${{ github.sha }}
+          docker push ghcr.io/${{ env.IMAGE_REPO }}/backend:latest
 
       - name: Push frontend image
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
-          docker tag ai-assistant-frontend:ci ghcr.io/${{ github.repository }}/frontend:${{ github.sha }}
-          docker tag ai-assistant-frontend:ci ghcr.io/${{ github.repository }}/frontend:latest
-          docker push ghcr.io/${{ github.repository }}/frontend:${{ github.sha }}
-          docker push ghcr.io/${{ github.repository }}/frontend:latest
+          docker tag ai-assistant-frontend:ci ghcr.io/${{ env.IMAGE_REPO }}/frontend:${{ github.sha }}
+          docker tag ai-assistant-frontend:ci ghcr.io/${{ env.IMAGE_REPO }}/frontend:latest
+          docker push ghcr.io/${{ env.IMAGE_REPO }}/frontend:${{ github.sha }}
+          docker push ghcr.io/${{ env.IMAGE_REPO }}/frontend:latest
