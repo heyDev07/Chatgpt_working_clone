@@ -7,6 +7,10 @@ import type { Message, ToolActivity } from "@/lib/types";
 import { MessageBubble } from "./MessageBubble";
 import { ToolActivityList } from "./ToolActivityList";
 
+// The empty-conversation state (no messages, no turn in flight) is handled entirely by
+// ChatWindow, which renders the greeting and Composer together as one centered block - this
+// component is only ever mounted once there's at least one message or a turn in progress, so it
+// no longer needs its own empty-state branch.
 export function MessageList({
   messages,
   streamingContent,
@@ -29,14 +33,6 @@ export function MessageList({
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, streamingContent, toolActivity, activeAgent]);
-
-  if (messages.length === 0 && streamingContent === null) {
-    return (
-      <div className="flex-1 flex items-center justify-center">
-        <h1 className="text-3xl font-semibold text-black/80 dark:text-white/80">What can I help with?</h1>
-      </div>
-    );
-  }
 
   return (
     <div className="flex-1 overflow-y-auto">

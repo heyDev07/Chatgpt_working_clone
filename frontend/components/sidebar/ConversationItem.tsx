@@ -1,11 +1,22 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Archive, ArchiveRestore, FolderInput, Pencil, Pin, PinOff, Tag as TagIcon, Trash2 } from "lucide-react";
+import {
+  Archive,
+  ArchiveRestore,
+  FolderInput,
+  MessageSquare,
+  Pencil,
+  Pin,
+  PinOff,
+  Tag as TagIcon,
+  Trash2,
+} from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useState, type ChangeEvent, type KeyboardEvent } from "react";
 
+import { Tooltip } from "@/components/ui/Tooltip";
 import { deleteConversation, setConversationFolder, updateConversation } from "@/lib/api/conversations";
 import { listFolders } from "@/lib/api/folders";
 import { addConversationTag, listTags, removeConversationTag } from "@/lib/api/tags";
@@ -163,8 +174,15 @@ export function ConversationItem({ conversation }: { conversation: Conversation 
         isActive ? "bg-black/10 dark:bg-white/15" : "hover:bg-black/5 dark:hover:bg-white/10"
       }`}
     >
-      <Link href={`/chat/${conversation.id}`} className="flex-1 flex items-center gap-1.5 min-w-0">
-        {conversation.is_pinned && <Pin size={12} className="flex-shrink-0 opacity-50" />}
+      <Link href={`/chat/${conversation.id}`} className="flex-1 flex items-center gap-2 min-w-0">
+        {/* Pinned rows get a filled pin instead of the plain chat-bubble every other row uses -
+            a real icon difference, not just which section a row happens to render in, since the
+            "Pinned" section header alone read as too subtle a distinction on its own. */}
+        {conversation.is_pinned ? (
+          <Pin size={13} className="flex-shrink-0 fill-current opacity-60" />
+        ) : (
+          <MessageSquare size={13} className="flex-shrink-0 opacity-40" />
+        )}
         <span className="truncate text-black/80 dark:text-white/80">{conversation.title}</span>
         {conversation.tags.length > 0 && (
           <span className="flex-shrink-0 truncate text-xs text-black/40 dark:text-white/40">
@@ -173,67 +191,79 @@ export function ConversationItem({ conversation }: { conversation: Conversation 
         )}
       </Link>
       <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 flex-shrink-0 pl-1">
-        <button
-          onClick={(e) => {
-            e.preventDefault();
-            togglePin();
-          }}
-          aria-label={conversation.is_pinned ? "Unpin" : "Pin"}
-          className="text-black/40 hover:text-black dark:text-white/40 dark:hover:text-white"
-        >
-          {conversation.is_pinned ? <PinOff size={14} /> : <Pin size={14} />}
-        </button>
-        <button
-          onClick={(e) => {
-            e.preventDefault();
-            setTitleDraft(conversation.title);
-            setIsRenaming(true);
-          }}
-          aria-label="Rename"
-          className="text-black/40 hover:text-black dark:text-white/40 dark:hover:text-white"
-        >
-          <Pencil size={14} />
-        </button>
-        <button
-          onClick={(e) => {
-            e.preventDefault();
-            setIsMovingFolder(true);
-          }}
-          aria-label="Move to folder"
-          className="text-black/40 hover:text-black dark:text-white/40 dark:hover:text-white"
-        >
-          <FolderInput size={14} />
-        </button>
-        <button
-          onClick={(e) => {
-            e.preventDefault();
-            setIsTagging(true);
-          }}
-          aria-label="Edit tags"
-          className="text-black/40 hover:text-black dark:text-white/40 dark:hover:text-white"
-        >
-          <TagIcon size={14} />
-        </button>
-        <button
-          onClick={(e) => {
-            e.preventDefault();
-            toggleArchive();
-          }}
-          aria-label={conversation.is_archived ? "Unarchive" : "Archive"}
-          className="text-black/40 hover:text-black dark:text-white/40 dark:hover:text-white"
-        >
-          {conversation.is_archived ? <ArchiveRestore size={14} /> : <Archive size={14} />}
-        </button>
-        <button
-          onClick={(e) => {
-            e.preventDefault();
-            remove();
-          }}
-          aria-label="Delete"
-          className="text-black/40 hover:text-red-500 dark:text-white/40"
-        >
-          <Trash2 size={14} />
-        </button>
+        <Tooltip label={conversation.is_pinned ? "Unpin" : "Pin"}>
+          <button
+            onClick={(e) => {
+              e.preventDefault();
+              togglePin();
+            }}
+            aria-label={conversation.is_pinned ? "Unpin" : "Pin"}
+            className="text-black/40 hover:text-black dark:text-white/40 dark:hover:text-white"
+          >
+            {conversation.is_pinned ? <PinOff size={14} /> : <Pin size={14} />}
+          </button>
+        </Tooltip>
+        <Tooltip label="Rename">
+          <button
+            onClick={(e) => {
+              e.preventDefault();
+              setTitleDraft(conversation.title);
+              setIsRenaming(true);
+            }}
+            aria-label="Rename"
+            className="text-black/40 hover:text-black dark:text-white/40 dark:hover:text-white"
+          >
+            <Pencil size={14} />
+          </button>
+        </Tooltip>
+        <Tooltip label="Move to folder">
+          <button
+            onClick={(e) => {
+              e.preventDefault();
+              setIsMovingFolder(true);
+            }}
+            aria-label="Move to folder"
+            className="text-black/40 hover:text-black dark:text-white/40 dark:hover:text-white"
+          >
+            <FolderInput size={14} />
+          </button>
+        </Tooltip>
+        <Tooltip label="Edit tags">
+          <button
+            onClick={(e) => {
+              e.preventDefault();
+              setIsTagging(true);
+            }}
+            aria-label="Edit tags"
+            className="text-black/40 hover:text-black dark:text-white/40 dark:hover:text-white"
+          >
+            <TagIcon size={14} />
+          </button>
+        </Tooltip>
+        <Tooltip label={conversation.is_archived ? "Unarchive" : "Archive"}>
+          <button
+            onClick={(e) => {
+              e.preventDefault();
+              toggleArchive();
+            }}
+            aria-label={conversation.is_archived ? "Unarchive" : "Archive"}
+            className="text-black/40 hover:text-black dark:text-white/40 dark:hover:text-white"
+          >
+            {conversation.is_archived ? <ArchiveRestore size={14} /> : <Archive size={14} />}
+          </button>
+        </Tooltip>
+        <Tooltip label="Delete">
+          <button
+            onClick={(e) => {
+              e.preventDefault();
+              remove();
+            }}
+            aria-label="Delete"
+            className="text-black/40 hover:text-red-500 dark:text-white/40"
+          >
+            <Trash2 size={14} />
+          </button>
+        </Tooltip>
       </div>
     </div>
   );

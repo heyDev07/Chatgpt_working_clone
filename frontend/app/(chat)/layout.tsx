@@ -1,6 +1,15 @@
 "use client";
 
-import { BrainCog, FolderOpen, LogOut, PanelLeftClose, PanelLeftOpen, Settings, ShieldCheck } from "lucide-react";
+import {
+  BrainCog,
+  FolderOpen,
+  LogOut,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Settings,
+  ShieldCheck,
+  Sparkles,
+} from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
@@ -12,6 +21,7 @@ import { ConversationList } from "@/components/sidebar/ConversationList";
 import { FolderList } from "@/components/sidebar/FolderList";
 import { NewChatButton } from "@/components/sidebar/NewChatButton";
 import { TagFilterBar } from "@/components/sidebar/TagFilterBar";
+import { Tooltip } from "@/components/ui/Tooltip";
 import { useAuth } from "@/lib/auth/AuthContext";
 
 export default function ChatLayout({ children }: { children: ReactNode }) {
@@ -55,18 +65,24 @@ export default function ChatLayout({ children }: { children: ReactNode }) {
         {/* Fixed-width inner wrapper: the outer <aside> animates width and clips via
             overflow-hidden, so content is clipped during the slide rather than reflowing. */}
         <div className="flex h-full w-64 flex-col p-2 gap-2">
-          <div className="flex items-center gap-1">
-            <div className="flex-1 min-w-0">
-              <NewChatButton />
+          <div className="flex items-center gap-2 px-1 py-1">
+            <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-violet-500 text-white">
+              <Sparkles size={15} />
             </div>
-            <button
-              onClick={() => setIsSidebarOpen(false)}
-              aria-label="Collapse sidebar"
-              className="flex-shrink-0 rounded-lg p-2 text-black/50 hover:bg-black/5 dark:text-white/50 dark:hover:bg-white/10"
-            >
-              <PanelLeftClose size={18} />
-            </button>
+            <span className="flex-1 min-w-0 truncate text-sm font-semibold text-black/80 dark:text-white/80">
+              AI Assistant
+            </span>
+            <Tooltip label="Collapse sidebar">
+              <button
+                onClick={() => setIsSidebarOpen(false)}
+                aria-label="Collapse sidebar"
+                className="flex-shrink-0 rounded-lg p-2 text-black/50 hover:bg-black/5 dark:text-white/50 dark:hover:bg-white/10"
+              >
+                <PanelLeftClose size={18} />
+              </button>
+            </Tooltip>
           </div>
+          <NewChatButton />
           <div className="flex-1 overflow-y-auto flex flex-col gap-2 px-1">
             <FolderList selectedFolderId={selectedFolderId} onSelect={setSelectedFolderId} />
             <TagFilterBar selectedTagId={selectedTagId} onSelect={setSelectedTagId} />
@@ -102,32 +118,38 @@ export default function ChatLayout({ children }: { children: ReactNode }) {
             <span className="flex-1 truncate text-sm text-black/80 dark:text-white/80">
               {user.full_name || user.email}
             </span>
-            <button
-              onClick={() => setShowSettings(true)}
-              aria-label="Settings"
-              className="flex-shrink-0 text-black/40 hover:text-black dark:text-white/40 dark:hover:text-white"
-            >
-              <Settings size={15} />
-            </button>
-            <button
-              onClick={handleLogout}
-              aria-label="Log out"
-              className="flex-shrink-0 text-black/40 hover:text-black dark:text-white/40 dark:hover:text-white"
-            >
-              <LogOut size={15} />
-            </button>
+            <Tooltip label="Settings">
+              <button
+                onClick={() => setShowSettings(true)}
+                aria-label="Settings"
+                className="flex-shrink-0 text-black/40 hover:text-black dark:text-white/40 dark:hover:text-white"
+              >
+                <Settings size={15} />
+              </button>
+            </Tooltip>
+            <Tooltip label="Log out">
+              <button
+                onClick={handleLogout}
+                aria-label="Log out"
+                className="flex-shrink-0 text-black/40 hover:text-black dark:text-white/40 dark:hover:text-white"
+              >
+                <LogOut size={15} />
+              </button>
+            </Tooltip>
           </div>
         </div>
       </aside>
 
       {!isSidebarOpen && (
-        <button
-          onClick={() => setIsSidebarOpen(true)}
-          aria-label="Expand sidebar"
-          className="absolute left-2 top-2 z-10 rounded-lg p-2 text-black/50 hover:bg-black/5 dark:text-white/50 dark:hover:bg-white/10"
-        >
-          <PanelLeftOpen size={18} />
-        </button>
+        <Tooltip label="Expand sidebar" side="bottom">
+          <button
+            onClick={() => setIsSidebarOpen(true)}
+            aria-label="Expand sidebar"
+            className="absolute left-2 top-2 z-10 rounded-lg p-2 text-black/50 hover:bg-black/5 dark:text-white/50 dark:hover:bg-white/10"
+          >
+            <PanelLeftOpen size={18} />
+          </button>
+        </Tooltip>
       )}
 
       {/* Reserves a gutter matching the floating expand button's footprint so it never sits on

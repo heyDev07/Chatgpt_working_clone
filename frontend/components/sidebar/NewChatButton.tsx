@@ -22,7 +22,7 @@ export function NewChatButton() {
     <button
       onClick={() => mutate()}
       disabled={isPending}
-      className="flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm font-medium text-black/80 dark:text-white/80 hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-50"
+      className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-black/80 dark:text-white/80 hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-50"
     >
       <SquarePen size={17} />
       New chat

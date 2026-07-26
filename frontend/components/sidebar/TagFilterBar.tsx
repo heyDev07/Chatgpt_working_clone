@@ -52,7 +52,7 @@ export function TagFilterBar({
   if (!tags?.length && !isCreating) {
     return (
       <div className="flex items-center justify-between px-2">
-        <span className="text-xs font-medium text-black/40 dark:text-white/40">Tags</span>
+        <span className="text-sm font-medium text-black/50 dark:text-white/50">Tags</span>
         <button
           onClick={() => setIsCreating(true)}
           aria-label="New tag"
@@ -67,7 +67,7 @@ export function TagFilterBar({
   return (
     <div className="flex flex-col gap-1.5 px-2">
       <div className="flex items-center justify-between">
-        <span className="text-xs font-medium text-black/40 dark:text-white/40">Tags</span>
+        <span className="text-sm font-medium text-black/50 dark:text-white/50">Tags</span>
         <button
           onClick={() => setIsCreating(true)}
           aria-label="New tag"

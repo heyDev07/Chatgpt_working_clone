@@ -128,7 +128,7 @@ export function FolderList({
   return (
     <div className="flex flex-col gap-0.5">
       <div className="flex items-center justify-between px-2">
-        <span className="text-xs font-medium text-black/40 dark:text-white/40">Folders</span>
+        <span className="text-sm font-medium text-black/50 dark:text-white/50">Folders</span>
         <button
           onClick={() => setIsCreating(true)}
           aria-label="New folder"

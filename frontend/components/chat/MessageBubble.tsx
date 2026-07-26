@@ -125,16 +125,36 @@ export function MessageBubble({
               {message.content}
             </div>
           )}
-          {onEdit && (
-            <button
-              onClick={startEdit}
-              aria-label="Edit message"
-              className="mt-1 flex items-center gap-1 text-xs text-black/40 hover:text-black opacity-0 group-hover:opacity-100 dark:text-white/40 dark:hover:text-white"
-            >
-              <Pencil size={12} />
-              Edit
-            </button>
-          )}
+          <div
+            className={`mt-1 flex items-center gap-3 group-hover:opacity-100 ${
+              isSpeaking ? "opacity-100" : "opacity-0"
+            }`}
+          >
+            {onEdit && (
+              <button
+                onClick={startEdit}
+                aria-label="Edit message"
+                className="flex items-center gap-1 text-xs text-black/40 hover:text-black dark:text-white/40 dark:hover:text-white"
+              >
+                <Pencil size={12} />
+                Edit
+              </button>
+            )}
+            {isSpeechSynthesisSupported() && message.content && (
+              <button
+                onClick={toggleSpeaking}
+                aria-label={isSpeaking ? "Stop reading aloud" : "Read aloud"}
+                className={`flex items-center gap-1 text-xs ${
+                  isSpeaking
+                    ? "text-blue-600 dark:text-blue-400"
+                    : "text-black/40 hover:text-black dark:text-white/40 dark:hover:text-white"
+                }`}
+              >
+                {isSpeaking ? <VolumeX size={13} /> : <Volume2 size={13} />}
+                {isSpeaking ? "Stop" : "Read aloud"}
+              </button>
+            )}
+          </div>
         </div>
       </div>
     );

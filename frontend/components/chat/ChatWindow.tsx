@@ -4,8 +4,11 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Settings } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
+import { Tooltip } from "@/components/ui/Tooltip";
 import { getConversation } from "@/lib/api/conversations";
 import { setMessageFeedback, stopGeneration } from "@/lib/api/messages";
+import { useAuth } from "@/lib/auth/AuthContext";
+import { greetingText } from "@/lib/greeting";
 import { PENDING_FIRST_MESSAGE_KEY, type PendingFirstMessage } from "@/lib/pendingFirstMessage";
 import {
   editMessage,
@@ -23,6 +26,7 @@ import { MessageList } from "./MessageList";
 
 export function ChatWindow({ conversationId }: { conversationId: string }) {
   const queryClient = useQueryClient();
+  const { user } = useAuth();
   const { data: conversation, isLoading } = useQuery({
     queryKey: ["conversation", conversationId],
     queryFn: () => getConversation(conversationId),
@@ -337,38 +341,68 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
     );
   }
 
+  // No turn in flight and nothing sent yet - the heading and composer render as one centered
+  // block in the middle of the screen (matching ChatGPT's empty-conversation layout), instead
+  // of the heading centered in the space *above* a composer that's separately pinned to the
+  // bottom - the two used to live in different flex children (MessageList vs. this component's
+  // own trailing <Composer>), so they never actually appeared together as a single grouped
+  // block the way a real empty state should. Once a message exists (or one is in flight), this
+  // falls through to the normal transcript-plus-pinned-composer layout below.
+  const isEmpty = messages.length === 0 && streamingContent === null;
+
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden">
       <div className="flex items-center justify-between px-4 py-2.5 border-b border-black/10 dark:border-white/10">
         <span className="truncate text-sm font-medium text-black/70 dark:text-white/70">
           {conversation?.title}
         </span>
-        <button
-          onClick={() => setShowSettings(true)}
-          aria-label="Conversation settings"
-          className="flex-shrink-0 rounded-lg p-1.5 text-black/50 hover:bg-black/5 dark:text-white/50 dark:hover:bg-white/10"
-        >
-          <Settings size={16} />
-        </button>
-      </div>
-      <MessageList
-        messages={messages}
-        streamingContent={streamingContent}
-        toolActivity={toolActivity}
-        activeAgent={activeAgent}
-        onRegenerate={!isSending ? handleRegenerate : undefined}
-        onEditMessage={!isSending ? handleEditMessage : undefined}
-        onFeedback={handleFeedback}
-      />
-      {error && (
-        <div className="mx-auto max-w-3xl w-full px-4 pb-1 flex items-center gap-3 text-sm text-red-500">
-          <span>{error}</span>
-          <button onClick={handleRegenerate} className="underline hover:no-underline">
-            Retry
+        <Tooltip label="Conversation settings" side="bottom">
+          <button
+            onClick={() => setShowSettings(true)}
+            aria-label="Conversation settings"
+            className="flex-shrink-0 rounded-lg p-1.5 text-black/50 hover:bg-black/5 dark:text-white/50 dark:hover:bg-white/10"
+          >
+            <Settings size={16} />
           </button>
+        </Tooltip>
+      </div>
+      {isEmpty ? (
+        <div className="flex-1 flex flex-col items-center justify-center gap-6 px-4">
+          <h1 className="text-3xl font-semibold text-black/80 dark:text-white/80">{greetingText(user)}</h1>
+          <div className="w-full max-w-3xl">
+            <Composer onSend={handleSend} onStop={handleStop} disabled={isSending} />
+          </div>
+          {error && (
+            <div className="flex items-center gap-3 text-sm text-red-500">
+              <span>{error}</span>
+              <button onClick={handleRegenerate} className="underline hover:no-underline">
+                Retry
+              </button>
+            </div>
+          )}
         </div>
+      ) : (
+        <>
+          <MessageList
+            messages={messages}
+            streamingContent={streamingContent}
+            toolActivity={toolActivity}
+            activeAgent={activeAgent}
+            onRegenerate={!isSending ? handleRegenerate : undefined}
+            onEditMessage={!isSending ? handleEditMessage : undefined}
+            onFeedback={handleFeedback}
+          />
+          {error && (
+            <div className="mx-auto max-w-3xl w-full px-4 pb-1 flex items-center gap-3 text-sm text-red-500">
+              <span>{error}</span>
+              <button onClick={handleRegenerate} className="underline hover:no-underline">
+                Retry
+              </button>
+            </div>
+          )}
+          <Composer onSend={handleSend} onStop={handleStop} disabled={isSending} />
+        </>
       )}
-      <Composer onSend={handleSend} onStop={handleStop} disabled={isSending} />
       {showSettings && conversation && (
         <ConversationSettings conversation={conversation} onClose={() => setShowSettings(false)} />
       )}

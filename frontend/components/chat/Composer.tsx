@@ -3,6 +3,7 @@
 import { ArrowUp, ImagePlus, Mic, Square, X } from "lucide-react";
 import { useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
 
+import { Tooltip } from "@/components/ui/Tooltip";
 import { uploadAttachment } from "@/lib/api/attachments";
 import { startAudioRecording, transcribeAudio, type AudioRecorderHandle } from "@/lib/localTranscription";
 import { describeSpeechError, startSpeechRecognition, type RecognitionHandle } from "@/lib/speech";
@@ -84,8 +85,13 @@ export function Composer({
       const samples = await handle.stop();
       const text = await transcribeAudio(samples, setVoiceStatus);
       if (text.trim()) appendTranscript(text.trim(), true);
-    } catch {
-      setSpeechError("Local transcription failed.");
+    } catch (err) {
+      // Logged, not swallowed - this used to just show "Local transcription failed." with no
+      // way to tell whether the mic decode, the ~40MB model download, or the Whisper pipeline
+      // itself was what actually broke, which made a real report of this error undiagnosable.
+      console.error("Local transcription failed:", err);
+      const detail = err instanceof Error ? err.message : String(err);
+      setSpeechError(`Local transcription failed: ${detail}`);
     } finally {
       setVoiceStatus(null);
       setVoiceMode("idle");
@@ -97,10 +103,12 @@ export function Composer({
       localRecordingRef.current = await startAudioRecording();
       setVoiceMode("recording");
       setVoiceStatus("Recording - click the mic again to stop and transcribe");
-    } catch {
+    } catch (err) {
+      console.error("Microphone access failed:", err);
       setVoiceMode("idle");
       setVoiceStatus(null);
-      setSpeechError("Microphone access failed.");
+      const detail = err instanceof Error ? err.message : String(err);
+      setSpeechError(`Microphone access failed: ${detail}`);
     }
   };
 
@@ -231,26 +239,16 @@ export function Composer({
               onChange={handleFileSelect}
               className="hidden"
             />
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              disabled={disabled || isUploading}
-              aria-label="Attach image"
-              className="flex-shrink-0 rounded-full p-2 text-black/50 hover:bg-black/5 disabled:opacity-40 dark:text-white/50 dark:hover:bg-white/10"
-            >
-              <ImagePlus size={19} />
-            </button>
-            <button
-              onClick={toggleMic}
-              disabled={disabled || voiceMode === "transcribing"}
-              aria-label={voiceMode === "idle" ? "Start voice input" : "Stop voice input"}
-              className={`flex-shrink-0 rounded-full p-2 disabled:opacity-40 ${
-                voiceMode === "native" || voiceMode === "recording"
-                  ? "text-red-500 hover:bg-red-500/10 animate-pulse"
-                  : "text-black/50 hover:bg-black/5 dark:text-white/50 dark:hover:bg-white/10"
-              }`}
-            >
-              <Mic size={19} />
-            </button>
+            <Tooltip label="Add photo">
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={disabled || isUploading}
+                aria-label="Attach image"
+                className="flex-shrink-0 rounded-full p-2 text-black/50 hover:bg-black/5 disabled:opacity-40 dark:text-white/50 dark:hover:bg-white/10"
+              >
+                <ImagePlus size={19} />
+              </button>
+            </Tooltip>
             <textarea
               ref={textareaRef}
               value={value}
@@ -261,23 +259,43 @@ export function Composer({
               rows={1}
               className="flex-1 resize-none bg-transparent py-1.5 text-[15px] outline-none disabled:opacity-50 placeholder:text-black/40 dark:placeholder:text-white/40 max-h-[200px]"
             />
+            {/* Mic grouped with Send at the trailing end, matching ChatGPT's composer layout -
+                previously sat right after the attach button on the leading side instead. */}
+            <Tooltip label={voiceMode === "idle" ? "Dictate" : "Stop dictating"}>
+              <button
+                onClick={toggleMic}
+                disabled={disabled || voiceMode === "transcribing"}
+                aria-label={voiceMode === "idle" ? "Start voice input" : "Stop voice input"}
+                className={`flex-shrink-0 rounded-full p-2 disabled:opacity-40 ${
+                  voiceMode === "native" || voiceMode === "recording"
+                    ? "text-red-500 hover:bg-red-500/10 animate-pulse"
+                    : "text-black/50 hover:bg-black/5 dark:text-white/50 dark:hover:bg-white/10"
+                }`}
+              >
+                <Mic size={19} />
+              </button>
+            </Tooltip>
             {disabled ? (
-              <button
-                onClick={onStop}
-                className="flex-shrink-0 rounded-full bg-black dark:bg-white p-2 text-white dark:text-black"
-                aria-label="Stop generating"
-              >
-                <Square size={15} fill="currentColor" />
-              </button>
+              <Tooltip label="Stop generating">
+                <button
+                  onClick={onStop}
+                  className="flex-shrink-0 rounded-full bg-black dark:bg-white p-2 text-white dark:text-black"
+                  aria-label="Stop generating"
+                >
+                  <Square size={15} fill="currentColor" />
+                </button>
+              </Tooltip>
             ) : (
-              <button
-                onClick={submit}
-                disabled={(!value.trim() && pending.length === 0) || isUploading}
-                className="flex-shrink-0 rounded-full bg-black dark:bg-white p-2 text-white dark:text-black disabled:opacity-30"
-                aria-label="Send message"
-              >
-                <ArrowUp size={17} />
-              </button>
+              <Tooltip label="Send">
+                <button
+                  onClick={submit}
+                  disabled={(!value.trim() && pending.length === 0) || isUploading}
+                  className="flex-shrink-0 rounded-full bg-black dark:bg-white p-2 text-white dark:text-black disabled:opacity-30"
+                  aria-label="Send message"
+                >
+                  <ArrowUp size={17} />
+                </button>
+              </Tooltip>
             )}
           </div>
         </div>
