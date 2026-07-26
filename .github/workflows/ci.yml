@@ -12,6 +12,37 @@ jobs:
     defaults:
       run:
         working-directory: backend
+    # Postgres/Redis as real service containers (not mocked/sqlite) - tests/conftest.py spins up
+    # an actual uvicorn server and hits it over real HTTP, matching the "verify against real
+    # infra" discipline used everywhere else in this project rather than special-casing CI to be
+    # the one place that's faked.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: ai_assistant
+          POSTGRES_PASSWORD: ai_assistant
+          POSTGRES_DB: ai_assistant_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql+asyncpg://ai_assistant:ai_assistant@localhost:5432/ai_assistant_test
+      REDIS_URL: redis://localhost:6379/1
+      JWT_SECRET_KEY: test-secret-key-not-for-real-use
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -23,11 +54,11 @@ jobs:
       # A real import, not just "pip install succeeded" - catches broken imports/config issues
       # that a clean requirements install wouldn't.
       - run: python -c "import app.main"
-      # Full integration coverage against real Postgres/Redis/Qdrant/MinIO is Phase 19's job -
-      # this suite is intentionally just pure, dependency-free unit tests for now (the security-
-      # critical functions from Phase 15's hardening pass), so it runs here without needing any
-      # of that infra spun up as CI services.
-      - run: pytest
+      # test_security_helpers.py's pure unit tests plus test_auth.py/test_conversations.py's real
+      # HTTP integration tests (Phase 19) - both run in the same pytest invocation since they
+      # share one pytest.ini/conftest.py and neither needs anything the services above don't
+      # already provide.
+      - run: pytest -v
 
   frontend:
     runs-on: ubuntu-latest
