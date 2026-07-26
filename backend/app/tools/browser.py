@@ -99,40 +99,83 @@ class PlaywrightBrowserSession:
     against the same open tab (navigate, then click, then screenshot all need the *same* page),
     so the subprocess must stay alive across a turn's iterations. chat_service creates one fresh
     instance per turn and closes it in a finally block when the turn ends - it never outlives one
-    request, so a crashed/cancelled turn can't leak a running Chromium process indefinitely."""
+    request, so a crashed/cancelled turn can't leak a running Chromium process indefinitely.
+
+    All actual MCP I/O (open, every call_tool, close) runs on one dedicated worker task,
+    regardless of which task calls into this class - open()/call_tool()/aclose() just hand a
+    request to that worker over a queue and await its reply via a future. This isn't defensive
+    styling; it's a fix for a real bug hit live once the tool-calling loop became a LangGraph
+    graph (see tool_loop_graph.py). LangGraph executes each node via its own asyncio.create_task,
+    so call_tool() (invoked from inside call_tools_node) and aclose() (invoked from
+    chat_service.py's own finally block) land on *different* tasks for the same turn. The MCP
+    SDK's stdio_client wraps the subprocess's pipes in an anyio TaskGroup, and something in that
+    combination breaks when the group is touched from a task other than whichever task is
+    currently driving it - confirmed by minimally reproducing a plain anyio TaskGroup surviving
+    the exact same cross-task LangGraph pattern with no error, meaning the failure is specific to
+    the MCP stdio transport (or its interaction with Starlette's BaseHTTPMiddleware wrapping the
+    SSE response), not a general "anyio resources can't cross tasks" rule. Pinning everything to
+    one worker task sidesteps needing to fully pin down which of those it actually is - it
+    guarantees the constraint is satisfied by construction rather than by knowing its exact
+    shape."""
 
     def __init__(self) -> None:
-        self._stack: AsyncExitStack | None = None
-        self._session: ClientSession | None = None
+        self._requests: asyncio.Queue[tuple[str, dict[str, Any], asyncio.Future[str]] | None] = asyncio.Queue()
+        self._worker_task: asyncio.Task[None] | None = None
 
-    async def _ensure_started(self) -> ClientSession:
-        if self._session is None:
-            stack = AsyncExitStack()
+    async def open(self) -> None:
+        ready: asyncio.Future[None] = asyncio.get_running_loop().create_future()
+        self._worker_task = asyncio.create_task(self._run_worker(ready))
+        await ready
+
+    async def _run_worker(self, ready: asyncio.Future[None]) -> None:
+        stack = AsyncExitStack()
+        try:
             params = StdioServerParameters(command=PLAYWRIGHT_COMMAND, args=PLAYWRIGHT_ARGS, cwd=_ISOLATED_CWD)
             read_stream, write_stream = await stack.enter_async_context(stdio_client(params))
             session = await stack.enter_async_context(ClientSession(read_stream, write_stream))
             await session.initialize()
-            self._stack = stack
-            self._session = session
-        return self._session
+        except BaseException as exc:
+            if not ready.done():
+                ready.set_exception(exc)
+            await stack.aclose()
+            return
+        ready.set_result(None)
+
+        try:
+            while True:
+                item = await self._requests.get()
+                if item is None:
+                    break
+                name, arguments, future = item
+                try:
+                    result = await session.call_tool(name, arguments)
+                    text_parts = [block.text for block in result.content if hasattr(block, "text")]
+                    output = "\n".join(text_parts)
+                    if result.isError:
+                        raise ProviderError(output or f"Browser tool '{name}' returned an error")
+                    if not future.done():
+                        future.set_result(output)
+                except BaseException as exc:  # noqa: BLE001 - relayed to the caller via the future, not swallowed
+                    if not future.done():
+                        future.set_exception(exc)
+        finally:
+            await stack.aclose()
 
     async def call_tool(self, name: str, arguments: dict[str, Any]) -> str:
         if name == "browser_navigate" and "url" in arguments:
             await _assert_safe_url(arguments["url"])
 
-        session = await self._ensure_started()
-        result = await session.call_tool(name, arguments)
-        text_parts = [block.text for block in result.content if hasattr(block, "text")]
-        output = "\n".join(text_parts)
-        if result.isError:
-            raise ProviderError(output or f"Browser tool '{name}' returned an error")
-        return output
+        if self._worker_task is None:
+            raise RuntimeError("PlaywrightBrowserSession.open() must be called before call_tool()")
+        future: asyncio.Future[str] = asyncio.get_running_loop().create_future()
+        await self._requests.put((name, arguments, future))
+        return await future
 
     async def aclose(self) -> None:
-        if self._stack is not None:
-            await self._stack.aclose()
-            self._stack = None
-            self._session = None
+        if self._worker_task is not None:
+            await self._requests.put(None)
+            await self._worker_task
+            self._worker_task = None
 
 
 class PlaywrightMCPTool(BaseTool):

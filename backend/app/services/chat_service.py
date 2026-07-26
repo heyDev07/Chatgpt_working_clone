@@ -381,6 +381,14 @@ class ChatService:
         browser_session: PlaywrightBrowserSession | None = None
         if selected_agent == "browser":
             browser_session = PlaywrightBrowserSession()
+            # Eagerly opened here rather than lazily on first tool call, so a browser-persona
+            # turn that never actually calls a browser_* tool still fails fast on a broken
+            # Playwright MCP subprocess instead of silently proceeding. See
+            # PlaywrightBrowserSession's docstring for why open()/call_tool()/aclose() are safe
+            # to call from different tasks at all (they aren't, without its internal worker-task
+            # design) - relevant now that the tool loop below runs as a LangGraph graph, whose
+            # nodes execute via their own asyncio.create_task() calls.
+            await browser_session.open()
             tool_registry = tool_registry.child_with(build_playwright_tools(browser_session))
         tool_router = ToolRouter(self.db, tool_registry)
         tool_schemas = tool_registry.list_openai_tool_schemas(allowed=agent_def.allowed_tools) or None
