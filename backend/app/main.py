@@ -9,6 +9,7 @@ from sqlalchemy import text
 from app import models  # noqa: F401 - ensures all models are registered before relationships resolve
 from app.config.settings import get_settings
 from app.core.logging_config import configure_logging
+from app.core.scheduler import scheduler
 from app.db.database import engine
 from app.db.redis_client import get_redis
 from app.middleware.error_handler import register_error_handlers
@@ -29,9 +30,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await ensure_bucket_exists()
     await ensure_collection()
     await register_mcp_servers()
+    # Starts the reminders job store's own sync engine connection and resumes any pending jobs
+    # already persisted from before a restart - see app/core/scheduler.py for why this needs a
+    # dedicated engine rather than reusing the app's async one.
+    scheduler.start()
 
     yield
 
+    scheduler.shutdown(wait=False)
     await engine.dispose()
     await redis.aclose()
 

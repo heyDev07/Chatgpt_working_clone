@@ -75,3 +75,12 @@ export interface ToolActivity {
   output?: unknown;
   error?: string | null;
 }
+
+export interface Reminder {
+  id: string;
+  conversation_id: string | null;
+  message: string;
+  remind_at: string;
+  is_delivered: boolean;
+  created_at: string;
+}

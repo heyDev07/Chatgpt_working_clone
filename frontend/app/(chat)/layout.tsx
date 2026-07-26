@@ -16,6 +16,7 @@ import { useEffect, useState, type ReactNode } from "react";
 
 import { DocumentManager } from "@/components/documents/DocumentManager";
 import { MemoryManager } from "@/components/memory/MemoryManager";
+import { ReminderBell } from "@/components/reminders/ReminderBell";
 import { SettingsModal } from "@/components/settings/SettingsModal";
 import { ConversationList } from "@/components/sidebar/ConversationList";
 import { FolderList } from "@/components/sidebar/FolderList";
@@ -72,6 +73,7 @@ export default function ChatLayout({ children }: { children: ReactNode }) {
             <span className="flex-1 min-w-0 truncate text-sm font-semibold text-black/80 dark:text-white/80">
               AI Assistant
             </span>
+            <ReminderBell />
             <Tooltip label="Collapse sidebar">
               <button
                 onClick={() => setIsSidebarOpen(false)}

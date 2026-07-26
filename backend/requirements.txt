@@ -27,3 +27,5 @@ langgraph==1.2.9
 starlette==0.41.3
 prometheus-fastapi-instrumentator==6.1.0
 python-json-logger==4.1.0
+apscheduler==3.11.3
+psycopg2-binary==2.9.12
