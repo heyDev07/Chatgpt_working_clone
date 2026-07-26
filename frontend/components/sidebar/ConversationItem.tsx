@@ -174,19 +174,31 @@ export function ConversationItem({ conversation }: { conversation: Conversation 
         isActive ? "bg-black/10 dark:bg-white/15" : "hover:bg-black/5 dark:hover:bg-white/10"
       }`}
     >
-      <Link href={`/chat/${conversation.id}`} className="flex-1 flex items-center gap-2 min-w-0">
-        {/* Pinned rows get a filled pin instead of the plain chat-bubble every other row uses -
-            a real icon difference, not just which section a row happens to render in, since the
-            "Pinned" section header alone read as too subtle a distinction on its own. */}
-        {conversation.is_pinned ? (
-          <Pin size={13} className="flex-shrink-0 fill-current opacity-60" />
-        ) : (
-          <MessageSquare size={13} className="flex-shrink-0 opacity-40" />
-        )}
-        <span className="truncate text-black/80 dark:text-white/80">{conversation.title}</span>
+      <Link href={`/chat/${conversation.id}`} className="flex-1 flex flex-col min-w-0">
+        {/* Tags used to render inline after the title in the same flex row - the title span had
+            no min-w-0 and the tags span was flex-shrink-0, so neither would ever yield width to
+            the other, meaning `truncate` never actually engaged on either one: the row just
+            overflowed, pushing tag text into the title and the hover action icons. Splitting
+            tags onto their own line as separate pills sidesteps that flex math entirely instead
+            of trying to get the shrink/truncate arithmetic right on a single cramped row. */}
+        <span className="flex items-center gap-2 min-w-0">
+          {conversation.is_pinned ? (
+            <Pin size={13} className="flex-shrink-0 fill-current opacity-60" />
+          ) : (
+            <MessageSquare size={13} className="flex-shrink-0 opacity-40" />
+          )}
+          <span className="min-w-0 truncate text-black/80 dark:text-white/80">{conversation.title}</span>
+        </span>
         {conversation.tags.length > 0 && (
-          <span className="flex-shrink-0 truncate text-xs text-black/40 dark:text-white/40">
-            {conversation.tags.map((t) => t.name).join(", ")}
+          <span className="ml-[21px] mt-0.5 flex flex-wrap gap-1">
+            {conversation.tags.map((t) => (
+              <span
+                key={t.id}
+                className="truncate rounded-full bg-black/5 px-1.5 py-0.5 text-[10px] text-black/50 dark:bg-white/10 dark:text-white/50"
+              >
+                {t.name}
+              </span>
+            ))}
           </span>
         )}
       </Link>
