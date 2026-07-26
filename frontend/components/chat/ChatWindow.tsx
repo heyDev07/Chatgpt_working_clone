@@ -5,7 +5,7 @@ import { Settings } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { getConversation } from "@/lib/api/conversations";
-import { setMessageFeedback } from "@/lib/api/messages";
+import { setMessageFeedback, stopGeneration } from "@/lib/api/messages";
 import { PENDING_FIRST_MESSAGE_KEY, type PendingFirstMessage } from "@/lib/pendingFirstMessage";
 import {
   editMessage,
@@ -41,6 +41,37 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
   const [showSettings, setShowSettings] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
 
+  // Batches SSE token deltas into one state update per animation frame instead of one per
+  // token. Providers can stream many small chunks a second, and every setStreamingContent call
+  // re-renders MarkdownContent, which fully re-parses the accumulated text into a fresh markdown
+  // AST (react-markdown has no incremental/streaming parse mode) - updating on every single
+  // token meant re-parsing and re-rendering the whole message far more often than the screen
+  // can even paint, which is what actually read as "not smooth." Capping flushes to once per
+  // frame bounds it to the display's real refresh rate, matching how production streaming chat
+  // UIs (ChatGPT, Claude) avoid the same problem.
+  const pendingDeltaRef = useRef("");
+  const rafIdRef = useRef<number | null>(null);
+
+  const cancelPendingFlush = () => {
+    if (rafIdRef.current !== null) {
+      cancelAnimationFrame(rafIdRef.current);
+      rafIdRef.current = null;
+    }
+    pendingDeltaRef.current = "";
+  };
+
+  const handleToken = (delta: string) => {
+    pendingDeltaRef.current += delta;
+    if (rafIdRef.current === null) {
+      rafIdRef.current = requestAnimationFrame(() => {
+        rafIdRef.current = null;
+        const chunk = pendingDeltaRef.current;
+        pendingDeltaRef.current = "";
+        setStreamingContent((prev) => (prev ?? "") + chunk);
+      });
+    }
+  };
+
   const handleAgent = (event: AgentEventData) => setActiveAgent(event.name);
 
   const handleToolCall = (event: ToolCallEventData) => {
@@ -61,7 +92,10 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
   };
 
   useEffect(() => {
-    return () => abortRef.current?.abort();
+    return () => {
+      abortRef.current?.abort();
+      cancelPendingFlush();
+    };
   }, []);
 
   const baseMessages = conversation?.messages ?? [];
@@ -96,6 +130,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
   };
 
   const runStream = (streamFn: (signal: AbortSignal) => Promise<void>) => {
+    cancelPendingFlush();
     setError(null);
     setStreamingContent("");
     setToolActivity([]);
@@ -133,17 +168,24 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
         conversationId,
         content,
         {
-          onToken: (delta) => setStreamingContent((prev) => (prev ?? "") + delta),
+          onToken: handleToken,
           onAgent: handleAgent,
           onToolCall: handleToolCall,
           onToolResult: handleToolResult,
-          onDone: () => {
+          onDone: async () => {
+            // Awaited before clearing the streaming placeholder below - invalidateQueries alone
+            // marks the cache stale but doesn't wait for the refetch, so clearing
+            // streamingContent immediately left a real visible gap: the just-finished reply
+            // would vanish (streaming state cleared) for one refetch round-trip before the
+            // persisted version popped back in from the cache. Awaiting means the real message
+            // is already in the cache by the time the placeholder disappears - one bubble
+            // replaces the other in the same render, nothing goes blank in between.
+            await queryClient.invalidateQueries({ queryKey: ["conversation", conversationId] });
             setIsSending(false);
             setStreamingContent(null);
             setToolActivity([]);
             setActiveAgent(null);
             setPendingMessages([]);
-            queryClient.invalidateQueries({ queryKey: ["conversation", conversationId] });
             queryClient.invalidateQueries({ queryKey: ["conversations"] });
             if (isFirstMessage) scheduleTitleRefresh();
           },
@@ -193,17 +235,17 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
       regenerateMessage(
         conversationId,
         {
-          onToken: (delta) => setStreamingContent((prev) => (prev ?? "") + delta),
+          onToken: handleToken,
           onAgent: handleAgent,
           onToolCall: handleToolCall,
           onToolResult: handleToolResult,
-          onDone: () => {
+          onDone: async () => {
+            await queryClient.invalidateQueries({ queryKey: ["conversation", conversationId] });
             setIsSending(false);
             setIsRegenerating(false);
             setStreamingContent(null);
             setToolActivity([]);
             setActiveAgent(null);
-            queryClient.invalidateQueries({ queryKey: ["conversation", conversationId] });
             queryClient.invalidateQueries({ queryKey: ["conversations"] });
           },
           onError: (message) => {
@@ -230,17 +272,17 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
         messageId,
         content,
         {
-          onToken: (delta) => setStreamingContent((prev) => (prev ?? "") + delta),
+          onToken: handleToken,
           onAgent: handleAgent,
           onToolCall: handleToolCall,
           onToolResult: handleToolResult,
-          onDone: () => {
+          onDone: async () => {
+            await queryClient.invalidateQueries({ queryKey: ["conversation", conversationId] });
             setIsSending(false);
             setEditingState(null);
             setStreamingContent(null);
             setToolActivity([]);
             setActiveAgent(null);
-            queryClient.invalidateQueries({ queryKey: ["conversation", conversationId] });
             queryClient.invalidateQueries({ queryKey: ["conversations"] });
             if (isFirstMessage) scheduleTitleRefresh();
           },
@@ -265,15 +307,23 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
   };
 
   const handleStop = () => {
+    // Aborting the local EventSource only stops *this tab* from watching - generation now
+    // survives a closed connection by design (see chat_service.py's _stream_resilient), so an
+    // explicit Stop click needs its own request to actually cancel the background generation,
+    // not just detach from it. Fire-and-forget: whether or not it lands before generation
+    // would've finished anyway, the UI's own state below already reflects "stopped."
+    stopGeneration(conversationId).catch(() => {});
     abortRef.current?.abort();
+    cancelPendingFlush();
     setIsSending(false);
     setIsRegenerating(false);
     setEditingState(null);
     setStreamingContent(null);
     setToolActivity([]);
     setActiveAgent(null);
-    // Don't optimistically append here: the server (verified to persist partial content on
-    // disconnect, with finish_reason "cancelled") will return the real messages on refetch.
+    // Don't optimistically append here: the server persists whatever content had already
+    // completed at the point of cancellation (same shielded finally block that protects a
+    // genuine disconnect) - the refetch below picks that up.
     setPendingMessages([]);
     queryClient.invalidateQueries({ queryKey: ["conversation", conversationId] });
     queryClient.invalidateQueries({ queryKey: ["conversations"] });

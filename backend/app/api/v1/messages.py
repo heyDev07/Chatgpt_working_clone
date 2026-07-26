@@ -99,6 +99,21 @@ async def update_message_feedback(
     )
 
 
+@router.post("/{conversation_id}/stop")
+async def stop_generation(
+    conversation_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    provider_manager: ProviderManager = Depends(get_provider_manager),
+) -> dict:
+    # Deliberately a separate request from the SSE stream itself, not just closing the
+    # EventSource client-side - since generation now survives the SSE connection closing (see
+    # ChatService._stream_resilient), an explicit stop needs its own signal to actually cancel
+    # the background task rather than just stopping the client from watching it.
+    stopped = await ChatService(db, provider_manager).stop_generation(conversation_id, current_user.id)
+    return {"stopped": stopped}
+
+
 @router.post("/{conversation_id}/regenerate")
 async def regenerate_message(
     conversation_id: uuid.UUID,

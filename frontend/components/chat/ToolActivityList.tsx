@@ -4,10 +4,48 @@ import { Check, Loader2, Wrench, X } from "lucide-react";
 
 import type { ToolActivity } from "@/lib/types";
 
-function formatArgs(args: Record<string, unknown>): string {
-  return Object.entries(args)
-    .map(([key, value]) => `${key}: ${JSON.stringify(value)}`)
-    .join(", ");
+// Human-readable label per tool, matching how ChatGPT/Claude describe tool use ("Searched the
+// web for X") instead of a raw function name - the previous version showed the literal tool
+// name plus JSON.stringify(arguments)/JSON.stringify(output) inline, which dumped an entire
+// Tavily search result blob (or a Playwright page snapshot) as one long unreadable line.
+function describeActivity(call: ToolActivity): string {
+  const args = call.arguments;
+  switch (call.name) {
+    case "tavily_search":
+    case "tavily_research":
+      return args.query ? `Searching the web for "${args.query}"` : "Searching the web";
+    case "tavily_extract":
+    case "tavily_crawl":
+    case "tavily_map":
+      return args.url ? `Reading ${args.url}` : "Reading a web page";
+    case "calculator":
+      return args.expression ? `Calculating ${args.expression}` : "Calculating";
+    case "sql_query":
+      return "Querying the database";
+    case "generate_image":
+      return args.prompt ? `Generating an image of "${args.prompt}"` : "Generating an image";
+    case "browser_navigate":
+      return args.url ? `Browsing to ${args.url}` : "Navigating";
+    default:
+      if (call.name.startsWith("browser_")) return "Using the browser";
+      // Fallback for anything not explicitly mapped: prettify the raw tool_name.
+      return call.name.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
+  }
+}
+
+function pastTense(label: string): string {
+  // "Searching the web for X" -> "Searched the web for X" once the call succeeds - cheap
+  // heuristic (this app's own tool set has a small, known list of -ing verbs), not general NLP.
+  return label.replace(/^(\w+)ing\b/, (_match, stem: string) => {
+    if (stem === "Search") return "Searched";
+    if (stem === "Read") return "Read";
+    if (stem === "Calculat") return "Calculated";
+    if (stem === "Generat") return "Generated";
+    if (stem === "Browsing") return "Browsed";
+    if (stem === "Us") return "Used";
+    if (stem === "Query" || stem === "Querying") return "Queried";
+    return `${stem}ed`;
+  });
 }
 
 export function ToolActivityList({ activity }: { activity: ToolActivity[] }) {
@@ -15,25 +53,30 @@ export function ToolActivityList({ activity }: { activity: ToolActivity[] }) {
 
   return (
     <div className="flex flex-col gap-1.5">
-      {activity.map((call) => (
-        <div
-          key={call.id}
-          className="flex flex-wrap items-center gap-2 rounded-lg border border-black/10 dark:border-white/10 px-3 py-2 text-xs text-black/60 dark:text-white/60 w-fit max-w-full"
-        >
-          {call.status === "calling" && <Loader2 size={13} className="flex-shrink-0 animate-spin" />}
-          {call.status === "success" && (
-            <Check size={13} className="flex-shrink-0 text-green-600 dark:text-green-500" />
-          )}
-          {call.status === "error" && <X size={13} className="flex-shrink-0 text-red-500" />}
-          <Wrench size={13} className="flex-shrink-0 opacity-50" />
-          <span className="font-mono">{call.name}</span>
-          <span className="text-black/40 dark:text-white/40 truncate">({formatArgs(call.arguments)})</span>
-          {call.status === "success" && call.output !== undefined && (
-            <span className="text-black/50 dark:text-white/50">&rarr; {JSON.stringify(call.output)}</span>
-          )}
-          {call.status === "error" && call.error && <span className="text-red-500">&rarr; {call.error}</span>}
-        </div>
-      ))}
+      {activity.map((call) => {
+        const label = describeActivity(call);
+        return (
+          <div
+            key={call.id}
+            className="flex items-center gap-2 rounded-lg border border-black/10 dark:border-white/10 px-3 py-1.5 text-xs text-black/60 dark:text-white/60 w-fit max-w-full"
+          >
+            {call.status === "calling" && <Loader2 size={13} className="flex-shrink-0 animate-spin" />}
+            {call.status === "success" && (
+              <Check size={13} className="flex-shrink-0 text-green-600 dark:text-green-500" />
+            )}
+            {call.status === "error" && <X size={13} className="flex-shrink-0 text-red-500" />}
+            {call.status === "calling" ? (
+              <Wrench size={13} className="flex-shrink-0 opacity-50" />
+            ) : null}
+            <span className="truncate">
+              {call.status === "success" ? pastTense(label) : label}
+              {call.status === "error" && call.error ? (
+                <span className="text-red-500"> — {call.error.slice(0, 80)}</span>
+              ) : null}
+            </span>
+          </div>
+        );
+      })}
     </div>
   );
 }

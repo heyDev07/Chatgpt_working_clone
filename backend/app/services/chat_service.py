@@ -11,6 +11,7 @@ from app.agents.definitions import DEFAULT_AGENT, get_agent
 from app.config.settings import get_settings
 from app.core.exceptions import NotFoundError, ProviderError
 from app.core.metrics import llm_request_duration_seconds, llm_requests_total, llm_tokens_total
+from app.db.database import async_session_factory
 from app.models.conversation import Conversation
 from app.models.message import Message
 from app.providers.base_provider import ChatMessage, ImagePart
@@ -52,6 +53,17 @@ _SUMMARY_SYSTEM_PROMPT = (
 )
 
 _FALLBACK_TITLE_LENGTH = 50
+
+# In-flight background generations (see ChatService._stream_resilient), keyed by conversation id.
+# Two jobs: (1) a strong reference so asyncio doesn't garbage-collect a task nothing else holds
+# onto - it only keeps a weak reference internally, and a task can be silently destroyed mid-run
+# otherwise, defeating the entire point of surviving after the request that spawned it goes away;
+# (2) a lookup so an explicit "Stop generating" click (see stop_generation below) can find and
+# cancel the right task - deliberately different from a client disconnect, which must NOT cancel
+# it. Each task removes its own entry once done via add_done_callback, guarded by identity so a
+# newer generation for the same conversation started after this one finished can't be evicted by
+# a late-firing callback from the one it replaced.
+_background_generation_tasks: dict[uuid.UUID, asyncio.Task] = {}
 
 
 def _fallback_title(content: str) -> str:
@@ -132,7 +144,7 @@ class ChatService:
                     )
                 )
 
-        async for event in self._generate_and_persist(conversation, history):
+        async for event in self._stream_resilient(conversation.id, user_id):
             yield event
 
     async def regenerate(self, conversation_id: uuid.UUID, user_id: uuid.UUID) -> AsyncIterator[dict]:
@@ -156,7 +168,7 @@ class ChatService:
             await self.messages.delete(last_assistant)
             await self.db.commit()
 
-        async for event in self._generate_and_persist(conversation, history):
+        async for event in self._stream_resilient(conversation.id, user_id):
             yield event
 
     async def edit_message(
@@ -204,10 +216,79 @@ class ChatService:
                     )
                 )
 
-        history = await self.messages.list_for_conversation(conversation.id)
-
-        async for event in self._generate_and_persist(conversation, history):
+        async for event in self._stream_resilient(conversation.id, user_id):
             yield event
+
+    async def _stream_resilient(self, conversation_id: uuid.UUID, user_id: uuid.UUID) -> AsyncIterator[dict]:
+        """Runs the actual generation (_generate_and_persist) in a background asyncio task on
+        its own DB session, independent of the request that's consuming this generator - so a
+        client disconnect (tab closed, page refreshed, user switches conversations) stops this
+        generator from yielding further SSE events, but does NOT cancel the underlying
+        generation or its persistence, the same way a real chat product's response keeps being
+        produced and saved even if you navigate away mid-stream. Confirmed live this was a real
+        bug before this existed: killing the client connection mid-turn left nothing but the
+        user's own message persisted - the assistant's reply was silently discarded entirely.
+
+        The caller's own session (self.db) can't be reused for the background task: it's opened
+        per-request inside the route's event_stream() generator (see messages.py) and torn down
+        when THAT generator's task is cancelled - exactly the thing this needs to survive. A
+        fresh session + fresh ChatService is opened here instead, mirroring the same pattern
+        title_generation.py/memory_extraction.py already use for their own fire-and-forget work.
+        conversation_id/user_id (plain UUIDs, not ORM objects) are what's passed in rather than
+        the caller's own `conversation`/`history` objects, since those are bound to the caller's
+        session and aren't safe to touch from a different one - the background task re-fetches
+        both fresh against its own session instead."""
+        queue: asyncio.Queue[dict | None] = asyncio.Queue()
+
+        async def produce() -> None:
+            try:
+                async with async_session_factory() as db:
+                    service = ChatService(db, self.provider_manager)
+                    conversation = await service.conversations.get_for_user(conversation_id, user_id)
+                    if conversation is None:
+                        return
+                    history = await service.messages.list_for_conversation(conversation.id)
+                    async for event in service._generate_and_persist(conversation, history):
+                        await queue.put(event)
+            except Exception:
+                logger.exception("Background generation failed for conversation %s", conversation_id)
+            finally:
+                await queue.put(None)  # sentinel: no more events, whether from success or failure
+
+        task = asyncio.create_task(produce())
+        _background_generation_tasks[conversation_id] = task
+        task.add_done_callback(
+            lambda t: _background_generation_tasks.pop(conversation_id, None)
+            if _background_generation_tasks.get(conversation_id) is t
+            else None
+        )
+
+        while True:
+            event = await queue.get()
+            if event is None:
+                break
+            yield event
+
+    async def stop_generation(self, conversation_id: uuid.UUID, user_id: uuid.UUID) -> bool:
+        """Explicit user action ("Stop generating"), unlike a client disconnect - deliberately
+        cancels the in-flight background task rather than letting it keep running. Cancelling
+        lands inside _generate_and_persist's own except/finally (the same path a real disconnect
+        used to take before _stream_resilient existed): the shielded finally block still runs,
+        so any already-completed content is preserved, but the loop stops making further
+        provider calls rather than running to completion invisibly. Returns whether a live
+        generation was actually found and cancelled - authorization is implicit in
+        conversation_id having come from this user's own SSE connection in the first place, but
+        this is a separate route/request, so ownership is still verified here rather than
+        trusting the id alone."""
+        conversation = await self.conversations.get_for_user(conversation_id, user_id)
+        if conversation is None:
+            raise NotFoundError("Conversation not found")
+
+        task = _background_generation_tasks.get(conversation_id)
+        if task is None or task.done():
+            return False
+        task.cancel()
+        return True
 
     async def _to_chat_message(self, message: Message) -> ChatMessage:
         """Fetches attached image bytes from S3 for a history message, if it has any - called
@@ -392,6 +473,32 @@ class ChatService:
             tool_registry = tool_registry.child_with(build_playwright_tools(browser_session))
         tool_router = ToolRouter(self.db, tool_registry)
         tool_schemas = tool_registry.list_openai_tool_schemas(allowed=agent_def.allowed_tools) or None
+
+        # Applies regardless of which persona was picked above - "general" (the default agent
+        # for most everyday questions, including exactly the kind of "who currently holds X"
+        # factual question this was written for) has an empty system_prompt otherwise, so
+        # nothing was ever telling the model its training data goes stale. Without this, a model
+        # answers confidently and wrong from memory rather than reaching for tavily_search, even
+        # though the tool is available to it - a real bug (confirmed live: "who is the education
+        # minister of India" got an outdated name) fixed here rather than by trying to get every
+        # individual agent's persona prompt to remember to say this. Gated on tavily_search
+        # actually being offered this turn - telling the model to use a tool that isn't in its
+        # tool list (no TAVILY_API_KEY configured, or a persona that excludes it) would just be a
+        # confusing, unactionable instruction.
+        if tool_schemas and any(t["function"]["name"] == "tavily_search" for t in tool_schemas):
+            chat_messages.append(
+                ChatMessage(
+                    role="system",
+                    content=(
+                        "Your training data has a cutoff date. Facts that can change over time - "
+                        "who currently holds a position or office, ongoing events, recent news, "
+                        "current prices or software versions - may be outdated in your memory "
+                        "even when you feel confident about them. When a question depends on "
+                        "something that could have changed, use the tavily_search tool to verify "
+                        "current information rather than answering from memory alone."
+                    ),
+                )
+            )
 
         full_content = ""
         finish_reason = "stop"
