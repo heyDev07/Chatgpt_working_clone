@@ -3,9 +3,11 @@ Matches this project's whole verification philosophy (run it against real infra,
 just automated instead of a curl session.
 
 Uses a dedicated database (ai_assistant_test, on the same local Postgres docker-compose already
-runs) and a dedicated Redis logical DB index (1, vs. dev's 0) - never touches real dev data or
-dev rate-limit counters. Requires the project's usual `docker compose up -d` infra to be running;
-these are integration tests, not unit tests, and don't try to fake that requirement away.
+runs - created automatically if missing, since the dev compose file only provisions the
+`ai_assistant` database, not a test one) and a dedicated Redis logical DB index (1, vs. dev's 0)
+- never touches real dev data or dev rate-limit counters. Requires the project's usual
+`docker compose up -d` infra to be running; these are integration tests, not unit tests, and
+don't try to fake that requirement away.
 DATABASE_URL/REDIS_URL are set here, before app.main is ever imported, so get_settings()'s
 @lru_cache picks up the test values on its one and only call - the app's real, unmodified
 get_db_session/get_redis dependencies then naturally point at the test infra with no dependency
@@ -34,6 +36,7 @@ import asyncio
 import os
 import threading
 import time
+from urllib.parse import urlsplit
 
 os.environ.setdefault(
     "DATABASE_URL", "postgresql+asyncpg://ai_assistant:ai_assistant@localhost:5433/ai_assistant_test"
@@ -41,6 +44,7 @@ os.environ.setdefault(
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379/1")
 os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key-not-for-real-use")
 
+import asyncpg
 import pytest
 import pytest_asyncio
 import uvicorn
@@ -67,7 +71,24 @@ def test_server():
     thread.join(timeout=5)
 
 
+async def _ensure_test_database_exists() -> None:
+    # `docker compose up -d` only provisions the dev database (POSTGRES_DB=ai_assistant in
+    # docker-compose.yml), not this test one - CREATE DATABASE can't run inside a transaction
+    # (SQLAlchemy always wraps engine.begin() in one), so this talks to the admin `postgres`
+    # maintenance database directly via asyncpg rather than through create_async_engine.
+    admin_url = urlsplit(os.environ["DATABASE_URL"].replace("+asyncpg", ""))
+    test_db_name = admin_url.path.lstrip("/")
+    conn = await asyncpg.connect(admin_url._replace(path="/postgres").geturl())
+    try:
+        exists = await conn.fetchval("SELECT 1 FROM pg_database WHERE datname = $1", test_db_name)
+        if not exists:
+            await conn.execute(f'CREATE DATABASE "{test_db_name}"')
+    finally:
+        await conn.close()
+
+
 async def _create_all() -> None:
+    await _ensure_test_database_exists()
     engine = create_async_engine(os.environ["DATABASE_URL"])
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
