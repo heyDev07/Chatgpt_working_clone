@@ -1,6 +1,7 @@
 import logging
 import re
 import uuid
+from difflib import SequenceMatcher
 
 from app.db.database import async_session_factory
 from app.providers.base_provider import ChatMessage
@@ -11,12 +12,24 @@ logger = logging.getLogger("app.memory_extraction")
 
 VALID_CATEGORIES = {"preference", "project", "goal", "communication_style", "general"}
 
+# Above this, a newly extracted memory is treated as a restatement of an existing one rather than
+# a new fact - found via real duplicates in production data ("Prefers concise, direct answers
+# without fluff." stored 4 separate times from 4 different conversations that each happened to
+# touch on the same preference). SequenceMatcher over lowercased text is a cheap, dependency-free
+# stand-in for real semantic similarity - good enough for near-restatements, which is what this
+# app's actual duplicates look like, though it won't catch two sentences that say the same thing
+# in genuinely different words.
+_DUPLICATE_SIMILARITY_THRESHOLD = 0.8
+
 _EXTRACTION_SYSTEM_PROMPT = """You analyze a single chat exchange and decide whether it reveals a \
 durable fact worth remembering about the user long-term: preferences, ongoing projects, recurring \
 goals, or communication style.
 
 Do NOT extract: secrets or credentials, one-off requests, small talk, or anything that isn't clearly \
-a lasting fact about the user themselves.
+a lasting fact about the user themselves. In particular, a one-off instruction that only applies to \
+the current message (e.g. "answer in exactly three words", "keep this one short") is NOT a durable \
+communication-style preference unless the user has explicitly said they want you to behave that way \
+going forward, every time.
 
 If nothing is worth storing, respond with exactly: NONE
 
@@ -71,7 +84,15 @@ async def run_memory_extraction(
             return
 
         async with async_session_factory() as db:
-            await MemoryRepository(db).create(user_id, category, text, importance)
+            memories = MemoryRepository(db)
+            existing = await memories.list_for_user(user_id)
+            normalized = text.lower()
+            if any(
+                SequenceMatcher(None, normalized, m.memory_text.lower()).ratio() >= _DUPLICATE_SIMILARITY_THRESHOLD
+                for m in existing
+            ):
+                return
+            await memories.create(user_id, category, text, importance)
             await db.commit()
     except Exception:
         logger.exception("Memory extraction failed for user %s", user_id)
