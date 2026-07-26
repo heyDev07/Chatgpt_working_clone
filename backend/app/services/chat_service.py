@@ -1,5 +1,4 @@
 import asyncio
-import json
 import logging
 import time
 import uuid
@@ -25,8 +24,8 @@ from app.repositories.message_repo import MessageRepository
 from app.services.agent_coordinator import classify_agent
 from app.services.memory_extraction import run_memory_extraction
 from app.services.title_generation import run_title_generation
+from app.services.tool_loop_graph import TOOL_LOOP_GRAPH, ToolLoopContext, ToolLoopState
 from app.storage.s3_client import download_bytes
-from app.tools.base import ToolResult
 from app.tools.browser import PlaywrightBrowserSession
 from app.tools.registry import build_playwright_tools, get_tool_registry
 from app.tools.router import ToolRouter
@@ -45,10 +44,6 @@ RETRIEVAL_TOP_K = 5
 # unchanged" guidance.
 SUMMARIZE_THRESHOLD = 25
 RECENT_MESSAGE_COUNT = 15
-
-# Guards against a model that keeps calling tools indefinitely without ever producing a final
-# answer - five rounds is generous for any real task and cheap to hit as a hard stop.
-MAX_TOOL_ITERATIONS = 5
 
 _SUMMARY_SYSTEM_PROMPT = (
     "Summarize the following conversation concisely, preserving key facts, decisions, and "
@@ -401,83 +396,44 @@ class ChatService:
         # to actually exists, in the finally block below.
         generated_attachments: list[dict] = []
 
+        # The actual model-call / tool-execution cycle, as a LangGraph graph (see
+        # tool_loop_graph.py for why just this part and not the rest of the turn). No
+        # checkpointer - each call below is one self-contained run; "custom" stream chunks are
+        # the exact SSE event dicts to forward to the client unchanged, "values" chunks are the
+        # full accumulated graph state, of which only the last one (once the graph reaches END)
+        # actually matters here.
+        initial_state: ToolLoopState = {
+            "chat_messages": chat_messages,
+            "iteration": 0,
+            "full_content": "",
+            "finish_reason": "stop",
+            "usage": None,
+            "generated_attachments": [],
+            "error_message": None,
+            "round_tool_calls": None,
+        }
+        graph_context: ToolLoopContext = {
+            "provider": provider,
+            "model": conversation.model,
+            "tool_schemas": tool_schemas,
+            "agent_def": agent_def,
+            "tool_router": tool_router,
+            "user_id": conversation.user_id,
+            "generation_kwargs": generation_kwargs,
+        }
+
         try:
-            for iteration in range(MAX_TOOL_ITERATIONS):
-                round_content = ""
-                round_tool_calls = None
-                round_finish_reason = "stop"
-
-                async for chunk in provider.stream(
-                    chat_messages, conversation.model, tools=tool_schemas, **generation_kwargs
-                ):
-                    if chunk.delta:
-                        round_content += chunk.delta
-                        yield {"event": "token", "data": {"delta": chunk.delta}}
-                    if chunk.finish_reason:
-                        round_finish_reason = chunk.finish_reason
-                    if chunk.usage:
-                        usage = chunk.usage
-                    if chunk.tool_calls:
-                        round_tool_calls = chunk.tool_calls
-
-                if round_finish_reason == "tool_calls" and round_tool_calls:
-                    chat_messages.append(
-                        ChatMessage(role="assistant", content=round_content, tool_calls=round_tool_calls)
-                    )
-                    for tool_call in round_tool_calls:
-                        try:
-                            arguments = json.loads(tool_call.arguments or "{}")
-                        except json.JSONDecodeError:
-                            arguments = {}
-                        yield {
-                            "event": "tool_call",
-                            "data": {"id": tool_call.id, "name": tool_call.name, "arguments": arguments},
-                        }
-                        # tool_schemas above already excludes a not-allowed tool from what the
-                        # provider was offered, but a provider isn't obligated to only ever
-                        # return names it was given (and a prompt-injected tool result could try
-                        # to coerce one) - this is the actual enforcement boundary, checked right
-                        # before anything executes, not just what's advertised.
-                        if agent_def.allowed_tools is not None and tool_call.name not in agent_def.allowed_tools:
-                            result = ToolResult(
-                                success=False,
-                                error=f"Tool '{tool_call.name}' is not available to the '{agent_def.name}' agent",
-                            )
-                        else:
-                            result = await tool_router.call(conversation.user_id, tool_call.name, arguments)
-                        yield {
-                            "event": "tool_result",
-                            "data": {
-                                "id": tool_call.id,
-                                "name": tool_call.name,
-                                "success": result.success,
-                                "output": result.output,
-                                "error": result.error,
-                            },
-                        }
-                        if tool_call.name == "generate_image" and result.success:
-                            try:
-                                generated_attachments.append(json.loads(result.output))
-                            except (json.JSONDecodeError, TypeError):
-                                pass  # malformed output shouldn't break the turn, just the image
-                        chat_messages.append(
-                            ChatMessage(
-                                role="tool",
-                                content=json.dumps(
-                                    {"result": result.output} if result.success else {"error": result.error}
-                                ),
-                                tool_call_id=tool_call.id,
-                                name=tool_call.name,
-                            )
-                        )
-                    continue
-
-                full_content = round_content
-                finish_reason = round_finish_reason
-                break
-            else:
-                error_message = f"Tool call loop exceeded {MAX_TOOL_ITERATIONS} iterations without a final answer"
-                finish_reason = "error"
+            async for stream_mode, chunk in TOOL_LOOP_GRAPH.astream(
+                initial_state, config={"configurable": graph_context}, stream_mode=["custom", "values"]
+            ):
+                if stream_mode == "custom":
+                    yield chunk
+                else:
+                    full_content = chunk["full_content"]
+                    finish_reason = chunk["finish_reason"]
+                    usage = chunk["usage"]
+                    generated_attachments = chunk["generated_attachments"]
+                    error_message = chunk["error_message"]
         except ProviderError as exc:
             error_message = str(exc)
             finish_reason = "error"

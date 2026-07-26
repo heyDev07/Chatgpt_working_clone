@@ -103,9 +103,29 @@ production where a log aggregator parses it — local dev defaults to plain text
 [DEVELOPMENT.md](DEVELOPMENT.md#monitoring-stack-optional) for running Prometheus/Grafana
 locally.
 
-## Why not LangGraph (yet)
+## LangGraph: why only the tool-call loop
 
-The chat pipeline is currently a linear function (`chat_service.py`), not a graph. A LangGraph
-rewrite is planned but deliberately deferred to its own dedicated design discussion rather than
-folded in incrementally alongside unrelated feature work — the state schema and node boundaries
-deserve to be decided once, not organically grown.
+`chat_service.py`'s turn pipeline is mostly a sequence of one-shot steps — load history,
+summarize if needed, inject memories, retrieve RAG context, pick an agent persona — each with no
+branching. The one part that's actually graph-shaped is the tool-call cycle: call the model,
+maybe call tools, call the model again, until a final answer or a hard iteration cap. That part
+is a real LangGraph `StateGraph` (`app/services/tool_loop_graph.py`): a `call_model` node and a
+`call_tools` node, a conditional edge routing between them based on whether the model's response
+included tool calls, and `call_model` itself enforcing the iteration cap rather than relying on
+LangGraph's generic recursion limit (so the resulting error message matches what the pipeline
+produced before this was a graph).
+
+Deliberately not graphed: everything outside the loop, and deliberately no checkpointer — this
+graph is invoked once per turn and produces a result within that same request; nothing about it
+needs to survive past it, since `chat_service.py` already persists the final assistant message
+itself in a shielded `finally` block regardless of how the turn ended.
+
+The graph doesn't change the wire protocol: nodes emit the exact same
+`{"event": "token"/"tool_call"/"tool_result", "data": {...}}` shape via LangGraph's `"custom"`
+stream mode (`get_stream_writer()`) that `chat_service.py` already yields straight through to the
+SSE client, and the final `"values"` stream chunk (LangGraph's merged graph state after the last
+step) supplies `full_content`/`finish_reason`/`usage`/`generated_attachments` the same way local
+variables did before the refactor. Verified live end-to-end against a real provider: a message
+that triggers the calculator tool produces `agent → tool_call → tool_result → token* → done`,
+proving the graph actually cycles back through `call_model` a second time after `call_tools`, not
+just that it type-checks.
