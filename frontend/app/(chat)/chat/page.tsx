@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { Composer } from "@/components/chat/Composer";
 import { createConversation } from "@/lib/api/conversations";
 import { useAuth } from "@/lib/auth/AuthContext";
+import type { ComposerMode } from "@/lib/composerMode";
 import { greetingText } from "@/lib/greeting";
 import { PENDING_FIRST_MESSAGE_KEY } from "@/lib/pendingFirstMessage";
 
@@ -17,12 +18,12 @@ export default function ChatPage() {
     mutationFn: () => createConversation(),
   });
 
-  const handleSend = (content: string, attachmentIds: string[]) => {
+  const handleSend = (content: string, attachmentIds: string[], mode: ComposerMode) => {
     mutate(undefined, {
       onSuccess: (conversation) => {
         sessionStorage.setItem(
           PENDING_FIRST_MESSAGE_KEY,
-          JSON.stringify({ conversationId: conversation.id, content, attachmentIds })
+          JSON.stringify({ conversationId: conversation.id, content, attachmentIds, mode })
         );
         router.push(`/chat/${conversation.id}`);
       },

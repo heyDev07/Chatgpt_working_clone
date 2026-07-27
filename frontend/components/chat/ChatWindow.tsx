@@ -8,11 +8,13 @@ import { Tooltip } from "@/components/ui/Tooltip";
 import { getConversation } from "@/lib/api/conversations";
 import { setMessageFeedback, stopGeneration } from "@/lib/api/messages";
 import { useAuth } from "@/lib/auth/AuthContext";
+import type { ComposerMode } from "@/lib/composerMode";
 import { greetingText } from "@/lib/greeting";
 import { PENDING_FIRST_MESSAGE_KEY, type PendingFirstMessage } from "@/lib/pendingFirstMessage";
 import {
   editMessage,
   regenerateMessage,
+  searchMessage,
   streamMessage,
   type AgentEventData,
   type ToolCallEventData,
@@ -149,7 +151,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
     });
   };
 
-  const handleSend = (content: string, attachmentIds: string[] = []) => {
+  const handleSend = (content: string, attachmentIds: string[] = [], mode: ComposerMode = "auto") => {
     const isFirstMessage = messages.length === 0;
     const userMessage: Message = {
       id: `temp-user-${Date.now()}`,
@@ -167,43 +169,44 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
     };
     setPendingMessages((prev) => [...prev, userMessage]);
 
+    const callbacks = {
+      onToken: handleToken,
+      onAgent: handleAgent,
+      onToolCall: handleToolCall,
+      onToolResult: handleToolResult,
+      onDone: async () => {
+        // Awaited before clearing the streaming placeholder below - invalidateQueries alone
+        // marks the cache stale but doesn't wait for the refetch, so clearing
+        // streamingContent immediately left a real visible gap: the just-finished reply
+        // would vanish (streaming state cleared) for one refetch round-trip before the
+        // persisted version popped back in from the cache. Awaiting means the real message
+        // is already in the cache by the time the placeholder disappears - one bubble
+        // replaces the other in the same render, nothing goes blank in between.
+        await queryClient.invalidateQueries({ queryKey: ["conversation", conversationId] });
+        setIsSending(false);
+        setStreamingContent(null);
+        setToolActivity([]);
+        setActiveAgent(null);
+        setPendingMessages([]);
+        queryClient.invalidateQueries({ queryKey: ["conversations"] });
+        if (isFirstMessage) scheduleTitleRefresh();
+      },
+      onError: (message: string) => {
+        setIsSending(false);
+        setStreamingContent(null);
+        setToolActivity([]);
+        setActiveAgent(null);
+        setError(message);
+      },
+    };
+
+    // "search" is a completely different endpoint (never touches the LLM, see
+    // chat_service.py's stream_search) - everything else goes through the normal message
+    // endpoint, with "auto" leaving the agent field unset so classify_agent() picks as before.
     runStream((signal) =>
-      streamMessage(
-        conversationId,
-        content,
-        {
-          onToken: handleToken,
-          onAgent: handleAgent,
-          onToolCall: handleToolCall,
-          onToolResult: handleToolResult,
-          onDone: async () => {
-            // Awaited before clearing the streaming placeholder below - invalidateQueries alone
-            // marks the cache stale but doesn't wait for the refetch, so clearing
-            // streamingContent immediately left a real visible gap: the just-finished reply
-            // would vanish (streaming state cleared) for one refetch round-trip before the
-            // persisted version popped back in from the cache. Awaiting means the real message
-            // is already in the cache by the time the placeholder disappears - one bubble
-            // replaces the other in the same render, nothing goes blank in between.
-            await queryClient.invalidateQueries({ queryKey: ["conversation", conversationId] });
-            setIsSending(false);
-            setStreamingContent(null);
-            setToolActivity([]);
-            setActiveAgent(null);
-            setPendingMessages([]);
-            queryClient.invalidateQueries({ queryKey: ["conversations"] });
-            if (isFirstMessage) scheduleTitleRefresh();
-          },
-          onError: (message) => {
-            setIsSending(false);
-            setStreamingContent(null);
-            setToolActivity([]);
-            setActiveAgent(null);
-            setError(message);
-          },
-        },
-        signal,
-        attachmentIds
-      )
+      mode === "search"
+        ? searchMessage(conversationId, content, callbacks, signal)
+        : streamMessage(conversationId, content, callbacks, signal, attachmentIds, mode === "auto" ? undefined : mode)
     );
   };
 
@@ -224,7 +227,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
         // (the optimistic pending-message append), and calling that synchronously inside an
         // effect body risks a cascading render - queueMicrotask moves it out of the effect's
         // own synchronous execution without any user-visible delay.
-        queueMicrotask(() => handleSend(pending.content, pending.attachmentIds));
+        queueMicrotask(() => handleSend(pending.content, pending.attachmentIds, pending.mode));
       }
     } catch {
       sessionStorage.removeItem(PENDING_FIRST_MESSAGE_KEY);

@@ -4,10 +4,15 @@
 export const AGENT_LABELS: Record<string, string> = {
   general: "General",
   coding: "Coding",
+  writing: "Writing",
   research: "Research",
   analyst: "Data Analyst",
   browser: "Browser",
   reviewer: "Reviewer",
+  // Not a real LLM persona - stream_search's agent event reuses this same field/pill so the
+  // message list can render it consistently, even though no agent classification (or LLM call
+  // at all) actually happened for it.
+  web_search: "Web Search",
 };
 
 export function agentLabel(name: string | null | undefined): string | null {

@@ -17,6 +17,11 @@ class MessageCreate(BaseModel):
     # IDs from a prior POST /attachments/upload - uploaded separately (so the composer can show
     # a preview immediately on file-select) and linked to this message once it's created.
     attachment_ids: list[uuid.UUID] = Field(default_factory=list)
+    # Explicit persona override from the composer's mode selector (e.g. "coding", "writing") -
+    # None (the default) leaves classify_agent()'s automatic routing completely untouched. Not
+    # validated against AGENTS here: get_agent() already falls back to "general" for an unknown
+    # name, the same graceful degradation an unrecognized classifier guess already gets.
+    agent: str | None = None
 
     @model_validator(mode="after")
     def _require_content_or_attachment(self) -> "MessageCreate":

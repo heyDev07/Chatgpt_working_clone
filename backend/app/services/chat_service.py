@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 import time
 import uuid
@@ -80,6 +81,38 @@ def _fallback_title(content: str) -> str:
     return f"{truncated or stripped[:_FALLBACK_TITLE_LENGTH]}…"
 
 
+# Tavily result "content" fields are often several paragraphs of scraped page text (see the
+# tavily_search tool's own output) - a snippet this long, not the full thing, is what makes the
+# formatted message actually scannable rather than a wall of text for every one of up to 5
+# results.
+_SEARCH_SNIPPET_LENGTH = 280
+
+
+def _format_search_results(query: str, raw_output: str) -> str:
+    """Turns tavily_search's raw JSON string output into a readable markdown message - this is
+    the entire "answer," there is no LLM synthesis step in search mode by design (see
+    stream_search's docstring). Falls back to showing the raw output verbatim if it isn't the
+    shape expected (Tavily's response format is out of this app's control), rather than raising
+    and losing the search results entirely."""
+    try:
+        data = json.loads(raw_output)
+        results = data.get("results", [])
+    except (json.JSONDecodeError, AttributeError):
+        return raw_output
+
+    if not results:
+        return f"No web results found for \"{query}\"."
+
+    lines = [f"**Web search results for \"{query}\":**\n"]
+    for result in results:
+        title = result.get("title") or result.get("url", "Untitled")
+        url = result.get("url", "")
+        content = (result.get("content") or "").strip().replace("\n", " ")
+        snippet = content[:_SEARCH_SNIPPET_LENGTH] + ("…" if len(content) > _SEARCH_SNIPPET_LENGTH else "")
+        lines.append(f"**[{title}]({url})**\n{snippet}\n")
+    return "\n".join(lines)
+
+
 class ChatService:
     def __init__(self, db: AsyncSession, provider_manager: ProviderManager):
         self.db = db
@@ -118,6 +151,7 @@ class ChatService:
         user_id: uuid.UUID,
         content: str,
         attachment_ids: list[uuid.UUID] | None = None,
+        agent: str | None = None,
     ) -> AsyncIterator[dict]:
         # Re-fetch within this service's own session rather than accepting an ORM object
         # from the caller: this method is meant to run inside a StreamingResponse generator,
@@ -145,8 +179,72 @@ class ChatService:
                     )
                 )
 
-        async for event in self._stream_resilient(conversation.id, user_id):
+        async for event in self._stream_resilient(conversation.id, user_id, agent):
             yield event
+
+    async def stream_search(self, conversation_id: uuid.UUID, user_id: uuid.UUID, query: str) -> AsyncIterator[dict]:
+        """Explicit web-search mode: added alongside stream_message, not in place of it - the
+        model still decides for itself whether to call tavily_search during a normal turn, and
+        that path is completely untouched. This one exists for the opposite case: the user
+        explicitly wants a direct web search with no LLM involved at all, most importantly
+        because it still works when every configured provider's quota is exhausted (confirmed
+        live, repeatedly, this session) - the automatic path can't help you then since even
+        deciding *whether* to search is itself an LLM call. This method never calls a provider,
+        by design, not merely by accident of not needing to."""
+        conversation = await self.conversations.get_for_user(conversation_id, user_id)
+        if not conversation:
+            yield {"event": "error", "data": {"code": "not_found", "message": "Conversation not found"}}
+            return
+
+        await self.messages.create(conversation.id, role="user", content=query)
+        await self.db.commit()
+
+        history = await self.messages.list_for_conversation(conversation.id)
+        if len(history) == 1 and conversation.title_is_auto:
+            conversation.title = _fallback_title(query)
+            await self.db.commit()
+
+        yield {"event": "agent", "data": {"name": "web_search", "label": "Web Search"}}
+
+        tool_router = ToolRouter(self.db, get_tool_registry())
+        full_content = ""
+        finish_reason = "stop"
+        error_message: str | None = None
+        try:
+            result = await tool_router.call(user_id, "tavily_search", {"query": query})
+            if not result.success:
+                error_message = result.error or "Web search failed"
+                finish_reason = "error"
+            else:
+                full_content = _format_search_results(query, result.output)
+                yield {"event": "token", "data": {"delta": full_content}}
+        except (GeneratorExit, anyio.get_cancelled_exc_class()):
+            finish_reason = "cancelled"
+            raise
+        finally:
+            assistant_message = None
+            if full_content:
+                with anyio.CancelScope(shield=True):
+                    assistant_message = await self.messages.create(
+                        conversation.id, role="assistant", content=full_content, finish_reason=finish_reason,
+                        agent="web_search",
+                    )
+                    await self.conversations.touch(conversation)
+                    await self.db.commit()
+
+        if error_message:
+            yield {"event": "error", "data": {"code": "tool_error", "message": error_message}}
+            return
+
+        yield {
+            "event": "done",
+            "data": {
+                "message_id": str(assistant_message.id) if assistant_message else None,
+                "finish_reason": finish_reason,
+                "usage": None,
+                "citations": [],
+            },
+        }
 
     async def regenerate(self, conversation_id: uuid.UUID, user_id: uuid.UUID) -> AsyncIterator[dict]:
         """Re-run the assistant turn for the current end of the conversation. If the last
@@ -179,6 +277,7 @@ class ChatService:
         message_id: uuid.UUID,
         content: str,
         attachment_ids: list[uuid.UUID] | None = None,
+        agent: str | None = None,
     ) -> AsyncIterator[dict]:
         """Edits a previous user message and forks the conversation from that point: every
         message after it (the old reply, and anything after a since-regenerated reply) is
@@ -217,10 +316,12 @@ class ChatService:
                     )
                 )
 
-        async for event in self._stream_resilient(conversation.id, user_id):
+        async for event in self._stream_resilient(conversation.id, user_id, agent):
             yield event
 
-    async def _stream_resilient(self, conversation_id: uuid.UUID, user_id: uuid.UUID) -> AsyncIterator[dict]:
+    async def _stream_resilient(
+        self, conversation_id: uuid.UUID, user_id: uuid.UUID, forced_agent: str | None = None
+    ) -> AsyncIterator[dict]:
         """Runs the actual generation (_generate_and_persist) in a background asyncio task on
         its own DB session, independent of the request that's consuming this generator - so a
         client disconnect (tab closed, page refreshed, user switches conversations) stops this
@@ -249,7 +350,7 @@ class ChatService:
                     if conversation is None:
                         return
                     history = await service.messages.list_for_conversation(conversation.id)
-                    async for event in service._generate_and_persist(conversation, history):
+                    async for event in service._generate_and_persist(conversation, history, forced_agent):
                         await queue.put(event)
             except Exception:
                 logger.exception("Background generation failed for conversation %s", conversation_id)
@@ -376,7 +477,7 @@ class ChatService:
             return None, []
 
     async def _generate_and_persist(
-        self, conversation: Conversation, history: list[Message]
+        self, conversation: Conversation, history: list[Message], forced_agent: str | None = None
     ) -> AsyncIterator[dict]:
         provider = self.provider_manager.get_provider(conversation.provider)
 
@@ -428,11 +529,18 @@ class ChatService:
         # Best-effort: classify_agent() never raises and falls back to "general" on any failure,
         # so a coordinator hiccup degrades to the plain default assistant rather than breaking
         # the turn - same philosophy as the RAG retrieval and memory-extraction steps above.
-        selected_agent = DEFAULT_AGENT
-        if history and history[-1].role == "user":
-            selected_agent = await classify_agent(
-                self.provider_manager, conversation.provider, conversation.model, history[-1].content
-            )
+        # forced_agent skips the classifier entirely - an explicit Code/Write mode toggle in the
+        # composer, not the model's own guess. get_agent() falls back to "general" for an
+        # unrecognized name either way, so an invalid forced_agent degrades the same way a
+        # classifier miss would, rather than needing its own validation here.
+        if forced_agent:
+            selected_agent = forced_agent
+        else:
+            selected_agent = DEFAULT_AGENT
+            if history and history[-1].role == "user":
+                selected_agent = await classify_agent(
+                    self.provider_manager, conversation.provider, conversation.model, history[-1].content
+                )
         agent_def = get_agent(selected_agent)
         if agent_def.system_prompt:
             chat_messages.append(ChatMessage(role="system", content=agent_def.system_prompt))

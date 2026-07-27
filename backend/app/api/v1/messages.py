@@ -45,8 +45,38 @@ async def send_message(
         async with async_session_factory() as stream_db:
             stream_service = ChatService(stream_db, provider_manager)
             async for event in stream_service.stream_message(
-                conversation_id, current_user.id, payload.content, payload.attachment_ids
+                conversation_id, current_user.id, payload.content, payload.attachment_ids, payload.agent
             ):
+                yield _format_sse(event["event"], event["data"])
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@router.post("/{conversation_id}/search")
+async def search_message(
+    conversation_id: uuid.UUID,
+    payload: MessageCreate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    provider_manager: ProviderManager = Depends(get_provider_manager),
+    redis: Redis = Depends(get_redis),
+) -> StreamingResponse:
+    # Explicit web-search mode - additive to send_message above, not a replacement. Still rate
+    # limited the same way (it's a real Tavily API call, same cost profile as any other message),
+    # but note this path works even when every LLM provider's quota is exhausted, since it never
+    # calls one - see ChatService.stream_search's docstring for why that's the entire point.
+    await message_rate_limiter.check(redis, identifier=str(current_user.id))
+
+    await ChatService(db, provider_manager).get_authorized_conversation(conversation_id, current_user.id)
+
+    async def event_stream() -> AsyncIterator[str]:
+        async with async_session_factory() as stream_db:
+            stream_service = ChatService(stream_db, provider_manager)
+            async for event in stream_service.stream_search(conversation_id, current_user.id, payload.content):
                 yield _format_sse(event["event"], event["data"])
 
     return StreamingResponse(
@@ -74,7 +104,7 @@ async def edit_message(
         async with async_session_factory() as stream_db:
             stream_service = ChatService(stream_db, provider_manager)
             async for event in stream_service.edit_message(
-                conversation_id, current_user.id, message_id, payload.content, payload.attachment_ids
+                conversation_id, current_user.id, message_id, payload.content, payload.attachment_ids, payload.agent
             ):
                 yield _format_sse(event["event"], event["data"])
 

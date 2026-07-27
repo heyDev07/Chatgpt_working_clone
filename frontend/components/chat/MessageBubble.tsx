@@ -9,6 +9,7 @@ import type { Message } from "@/lib/types";
 
 import { AttachmentImage } from "./AttachmentImage";
 import { MarkdownContent } from "./MarkdownContent";
+import { SearchSources } from "./SearchSources";
 import { StreamingCursor } from "./StreamingCursor";
 
 export function MessageBubble({
@@ -170,13 +171,17 @@ export function MessageBubble({
       <div className="flex-1 min-w-0 pt-1">
         {label && label !== "General" && (
           <div className="mb-1.5 inline-flex items-center gap-1 rounded-full bg-black/5 dark:bg-white/10 px-2 py-0.5 text-[10px] font-medium text-black/50 dark:text-white/50">
-            {label} agent
+            {/* "Web Search agent" would read oddly - it isn't an LLM persona at all, see
+                agents.ts's AGENT_LABELS comment on why it shares this field/pill anyway. */}
+            {label}
+            {message.agent !== "web_search" && " agent"}
           </div>
         )}
         <div className="text-[15px] leading-relaxed text-black/90 dark:text-white/90">
           <MarkdownContent content={message.content} />
           {isStreaming && <StreamingCursor />}
         </div>
+        {message.agent === "web_search" && <SearchSources content={message.content} />}
         {message.attachments && message.attachments.length > 0 && (
           <div className="mt-2 flex flex-wrap gap-2">
             {message.attachments.map((a) => (

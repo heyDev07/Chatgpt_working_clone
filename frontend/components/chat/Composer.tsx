@@ -5,10 +5,18 @@ import { useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent } fro
 
 import { Tooltip } from "@/components/ui/Tooltip";
 import { uploadAttachment } from "@/lib/api/attachments";
+import { COMPOSER_MODES, type ComposerMode } from "@/lib/composerMode";
 import { startAudioRecording, transcribeAudio, type AudioRecorderHandle } from "@/lib/localTranscription";
 import { describeSpeechError, startSpeechRecognition, type RecognitionHandle } from "@/lib/speech";
 
 type VoiceMode = "idle" | "native" | "recording" | "transcribing";
+
+const MODE_PLACEHOLDERS: Record<ComposerMode, string> = {
+  auto: "Message...",
+  coding: "Describe what to build...",
+  writing: "What should I write?",
+  search: "Search the web...",
+};
 
 interface PendingAttachment {
   id: string;
@@ -21,11 +29,12 @@ export function Composer({
   onStop,
   disabled,
 }: {
-  onSend: (content: string, attachmentIds: string[]) => void;
+  onSend: (content: string, attachmentIds: string[], mode: ComposerMode) => void;
   onStop: () => void;
   disabled?: boolean;
 }) {
   const [value, setValue] = useState("");
+  const [mode, setMode] = useState<ComposerMode>("auto");
   const [pending, setPending] = useState<PendingAttachment[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [voiceMode, setVoiceMode] = useState<VoiceMode>("idle");
@@ -195,7 +204,7 @@ export function Composer({
   const submit = () => {
     const trimmed = value.trim();
     if ((!trimmed && pending.length === 0) || disabled || isUploading) return;
-    onSend(trimmed, pending.map((p) => p.id));
+    onSend(trimmed, pending.map((p) => p.id), mode);
     setValue("");
     baseValueRef.current = ""; // keep in sync if voice input is still listening after send
     pending.forEach((p) => URL.revokeObjectURL(p.previewUrl));
@@ -212,6 +221,24 @@ export function Composer({
   return (
     <div className="px-4 pb-6 pt-2">
       <div className="mx-auto max-w-3xl">
+        {/* Explicit mode overrides - "auto" (default) leaves the existing classify-and-respond
+            pipeline completely untouched; the other three are additive, not replacements. */}
+        <div className="mb-1.5 flex items-center gap-1.5">
+          {COMPOSER_MODES.map((m) => (
+            <Tooltip key={m.value} label={m.description}>
+              <button
+                onClick={() => setMode(m.value)}
+                className={`rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
+                  mode === m.value
+                    ? "bg-black text-white dark:bg-white dark:text-black"
+                    : "bg-black/5 text-black/50 hover:bg-black/10 dark:bg-white/10 dark:text-white/50 dark:hover:bg-white/15"
+                }`}
+              >
+                {m.label}
+              </button>
+            </Tooltip>
+          ))}
+        </div>
         <div className="rounded-[28px] border border-black/10 dark:border-white/15 bg-white dark:bg-neutral-800 shadow-sm px-4 py-2.5">
           {pending.length > 0 && (
             <div className="mb-2 flex flex-wrap gap-2">
@@ -255,7 +282,7 @@ export function Composer({
               onChange={(e) => setValue(e.target.value)}
               onKeyDown={handleKeyDown}
               disabled={disabled}
-              placeholder="Message..."
+              placeholder={MODE_PLACEHOLDERS[mode]}
               rows={1}
               className="flex-1 resize-none bg-transparent py-1.5 text-[15px] outline-none disabled:opacity-50 placeholder:text-black/40 dark:placeholder:text-white/40 max-h-[200px]"
             />

@@ -76,11 +76,12 @@ export function streamMessage(
   content: string,
   callbacks: StreamCallbacks,
   signal: AbortSignal,
-  attachmentIds: string[] = []
+  attachmentIds: string[] = [],
+  agent?: string
 ): Promise<void> {
   return consumeStream(
     `${API_BASE_URL}/conversations/${conversationId}/messages`,
-    JSON.stringify({ content, attachment_ids: attachmentIds }),
+    JSON.stringify({ content, attachment_ids: attachmentIds, agent }),
     callbacks,
     signal
   );
@@ -105,11 +106,29 @@ export function editMessage(
   content: string,
   callbacks: StreamCallbacks,
   signal: AbortSignal,
-  attachmentIds: string[] = []
+  attachmentIds: string[] = [],
+  agent?: string
 ): Promise<void> {
   return consumeStream(
     `${API_BASE_URL}/conversations/${conversationId}/messages/${messageId}/edit`,
-    JSON.stringify({ content, attachment_ids: attachmentIds }),
+    JSON.stringify({ content, attachment_ids: attachmentIds, agent }),
+    callbacks,
+    signal
+  );
+}
+
+// Explicit web-search mode - additive, separate endpoint from streamMessage above (never
+// touches the LLM at all, see chat_service.py's stream_search docstring for why that's the
+// entire point). No attachment_ids/agent - a search query is just text.
+export function searchMessage(
+  conversationId: string,
+  content: string,
+  callbacks: StreamCallbacks,
+  signal: AbortSignal
+): Promise<void> {
+  return consumeStream(
+    `${API_BASE_URL}/conversations/${conversationId}/search`,
+    JSON.stringify({ content }),
     callbacks,
     signal
   );
