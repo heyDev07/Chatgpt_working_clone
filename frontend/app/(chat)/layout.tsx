@@ -11,7 +11,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 
 import { DocumentManager } from "@/components/documents/DocumentManager";
@@ -28,12 +28,24 @@ import { useAuth } from "@/lib/auth/AuthContext";
 export default function ChatLayout({ children }: { children: ReactNode }) {
   const { user, isLoading, logout } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [showMemories, setShowMemories] = useState(false);
   const [showDocuments, setShowDocuments] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [selectedTagId, setSelectedTagId] = useState<string | null>(null);
+
+  // The OAuth callback (backend, oauth.py) redirects here with this query param since /settings
+  // isn't a real routed page in this app - Settings is a modal opened by state. Cleans the URL
+  // via replace so a refresh doesn't re-trigger the modal open.
+  useEffect(() => {
+    if (searchParams.get("google_connected") === "true") {
+      setShowSettings(true);
+      router.replace("/chat");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only re-check when the query param itself changes
+  }, [searchParams]);
 
   useEffect(() => {
     if (!isLoading && !user) {

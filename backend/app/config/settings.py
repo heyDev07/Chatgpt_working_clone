@@ -63,6 +63,13 @@ class Settings(BaseSettings):
     # SQL runs under - query-string validation in the tool is a second layer, not the only one.
     sql_demo_db_password: str = "sql_demo_readonly_pw"
 
+    # Google OAuth (Gmail + Calendar) - one client covers both, scopes requested per-flow rather
+    # than needing separate apps. Empty defaults mean the connect flow is simply unavailable
+    # until configured, same graceful-degradation pattern as tavily_api_key above.
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    google_oauth_redirect_uri: str = "http://localhost:8000/api/v1/oauth/google/callback"
+
     # CORS
     cors_origins: str = "http://localhost:3000"
 

@@ -10,6 +10,8 @@ import { ApiError } from "@/lib/api/client";
 import { useAuth } from "@/lib/auth/AuthContext";
 import { useTheme, type Theme } from "@/lib/theme/ThemeContext";
 
+import { GoogleConnectSection } from "./GoogleConnectSection";
+
 const THEME_OPTIONS: { value: Theme; label: string; icon: typeof Sun }[] = [
   { value: "light", label: "Light", icon: Sun },
   { value: "dark", label: "Dark", icon: Moon },
@@ -130,6 +132,8 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
               ))}
             </div>
           </div>
+
+          <GoogleConnectSection />
 
           <DeleteAccountSection />
         </div>

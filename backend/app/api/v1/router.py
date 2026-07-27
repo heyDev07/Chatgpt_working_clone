@@ -9,6 +9,7 @@ from app.api.v1 import (
     folders,
     memories,
     messages,
+    oauth,
     reminders,
     shared,
     tags,
@@ -26,5 +27,6 @@ api_router.include_router(tools.router)
 api_router.include_router(folders.router)
 api_router.include_router(tags.router)
 api_router.include_router(reminders.router)
+api_router.include_router(oauth.router)
 api_router.include_router(shared.router)
 api_router.include_router(admin.router)
