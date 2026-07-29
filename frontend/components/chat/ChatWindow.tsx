@@ -13,10 +13,12 @@ import { greetingText } from "@/lib/greeting";
 import { PENDING_FIRST_MESSAGE_KEY, type PendingFirstMessage } from "@/lib/pendingFirstMessage";
 import {
   editMessage,
+  orchestrateMessage,
   regenerateMessage,
   searchMessage,
   streamMessage,
   type AgentEventData,
+  type PlanEventData,
   type ToolCallEventData,
   type ToolConfirmationEventData,
   type ToolResultEventData,
@@ -26,6 +28,7 @@ import type { Message, ToolActivity } from "@/lib/types";
 import { Composer } from "./Composer";
 import { ConversationSettings } from "./ConversationSettings";
 import { MessageList } from "./MessageList";
+import { OrchestratorPlan } from "./OrchestratorPlan";
 import { ToolConfirmationPrompt } from "./ToolConfirmationPrompt";
 
 export function ChatWindow({ conversationId }: { conversationId: string }) {
@@ -49,6 +52,8 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
   // separate request rather than something this stream connection can answer itself.
   const [pendingConfirmation, setPendingConfirmation] = useState<ToolConfirmationEventData | null>(null);
   const [isResolvingConfirmation, setIsResolvingConfirmation] = useState(false);
+  // Only ever set for mode==="agent" turns (orchestrateMessage) - see OrchestratorPlan.tsx.
+  const [plan, setPlan] = useState<PlanEventData | null>(null);
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
@@ -110,6 +115,8 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
   };
 
   const handleToolConfirmationRequired = (event: ToolConfirmationEventData) => setPendingConfirmation(event);
+
+  const handlePlan = (event: PlanEventData) => setPlan(event);
 
   const resolveConfirmation = async (approved: boolean) => {
     if (!pendingConfirmation) return;
@@ -200,6 +207,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
       onToolCall: handleToolCall,
       onToolResult: handleToolResult,
       onToolConfirmationRequired: handleToolConfirmationRequired,
+      onPlan: handlePlan,
       onDone: async () => {
         // Awaited before clearing the streaming placeholder below - invalidateQueries alone
         // marks the cache stale but doesn't wait for the refetch, so clearing
@@ -214,6 +222,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
         setToolActivity([]);
         setActiveAgent(null);
         setPendingConfirmation(null);
+        setPlan(null);
         setPendingMessages([]);
         queryClient.invalidateQueries({ queryKey: ["conversations"] });
         if (isFirstMessage) scheduleTitleRefresh();
@@ -224,17 +233,21 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
         setToolActivity([]);
         setActiveAgent(null);
         setPendingConfirmation(null);
+        setPlan(null);
         setError(message);
       },
     };
 
-    // "search" is a completely different endpoint (never touches the LLM, see
-    // chat_service.py's stream_search) - everything else goes through the normal message
-    // endpoint, with "auto" leaving the agent field unset so classify_agent() picks as before.
+    // "search" and "agent" are completely different endpoints (search never touches the LLM,
+    // see chat_service.py's stream_search; agent decomposes into subtasks, see
+    // orchestrator_service.py) - everything else goes through the normal message endpoint, with
+    // "auto" leaving the agent field unset so classify_agent() picks as before.
     runStream((signal) =>
       mode === "search"
         ? searchMessage(conversationId, content, callbacks, signal)
-        : streamMessage(conversationId, content, callbacks, signal, attachmentIds, mode === "auto" ? undefined : mode)
+        : mode === "agent"
+          ? orchestrateMessage(conversationId, content, callbacks, signal)
+          : streamMessage(conversationId, content, callbacks, signal, attachmentIds, mode === "auto" ? undefined : mode)
     );
   };
 
@@ -445,6 +458,11 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
               <button onClick={handleRegenerate} className="underline hover:no-underline">
                 Retry
               </button>
+            </div>
+          )}
+          {plan && streamingContent !== null && (
+            <div className="mx-auto max-w-3xl w-full px-4 pb-1">
+              <OrchestratorPlan plan={plan} activeAgent={activeAgent} />
             </div>
           )}
           {pendingConfirmation && (

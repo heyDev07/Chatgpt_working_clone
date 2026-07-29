@@ -29,12 +29,20 @@ export interface ToolConfirmationEventData {
   arguments: Record<string, unknown>;
 }
 
+// Only ever sent once per orchestrate() call, right after decomposition - see
+// orchestrator_service.py's docstring. Each step's own agent transition still arrives via the
+// normal "agent" event as that subtask actually starts running.
+export interface PlanEventData {
+  steps: { agent: string; task: string }[];
+}
+
 export interface StreamCallbacks {
   onToken: (delta: string) => void;
   onAgent?: (event: AgentEventData) => void;
   onToolCall?: (event: ToolCallEventData) => void;
   onToolResult?: (event: ToolResultEventData) => void;
   onToolConfirmationRequired?: (event: ToolConfirmationEventData) => void;
+  onPlan?: (event: PlanEventData) => void;
   onDone: (data: { message_id: string | null; finish_reason: string }) => void;
   onError: (message: string) => void;
 }
@@ -66,6 +74,8 @@ function consumeStream(url: string, body: string | undefined, callbacks: StreamC
         callbacks.onToolResult?.(JSON.parse(ev.data));
       } else if (ev.event === "tool_confirmation_required") {
         callbacks.onToolConfirmationRequired?.(JSON.parse(ev.data));
+      } else if (ev.event === "plan") {
+        callbacks.onPlan?.(JSON.parse(ev.data));
       } else if (ev.event === "done") {
         callbacks.onDone(JSON.parse(ev.data));
       } else if (ev.event === "error") {
@@ -139,6 +149,23 @@ export function searchMessage(
 ): Promise<void> {
   return consumeStream(
     `${API_BASE_URL}/conversations/${conversationId}/search`,
+    JSON.stringify({ content }),
+    callbacks,
+    signal
+  );
+}
+
+// Explicit "Agent" mode - decomposes into specialist subtasks and synthesizes one final answer,
+// see orchestrator_service.py's docstring. Emits a "plan" event before anything else, then the
+// normal token/tool_call/tool_result/agent events per subtask, same as streamMessage.
+export function orchestrateMessage(
+  conversationId: string,
+  content: string,
+  callbacks: StreamCallbacks,
+  signal: AbortSignal
+): Promise<void> {
+  return consumeStream(
+    `${API_BASE_URL}/conversations/${conversationId}/orchestrate`,
     JSON.stringify({ content }),
     callbacks,
     signal

@@ -15,6 +15,7 @@ from app.providers.provider_manager import ProviderManager
 from app.schemas.message import MessageCreate, MessageFeedbackUpdate, MessageOut, ToolConfirmationRequest
 from app.services import tool_confirmation
 from app.services.chat_service import ChatService
+from app.services.orchestrator_service import stream_orchestrated
 
 router = APIRouter(prefix="/conversations", tags=["messages"])
 
@@ -78,6 +79,36 @@ async def search_message(
         async with async_session_factory() as stream_db:
             stream_service = ChatService(stream_db, provider_manager)
             async for event in stream_service.stream_search(conversation_id, current_user.id, payload.content):
+                yield _format_sse(event["event"], event["data"])
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@router.post("/{conversation_id}/orchestrate")
+async def orchestrate_message(
+    conversation_id: uuid.UUID,
+    payload: MessageCreate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    provider_manager: ProviderManager = Depends(get_provider_manager),
+    redis: Redis = Depends(get_redis),
+) -> StreamingResponse:
+    # Explicit "Agent" composer mode - decomposes into specialist subtasks and runs each through
+    # the same tool-calling loop as any other mode, see orchestrator_service.py's docstring for
+    # why this exists on top of (not instead of) classify_agent()'s single-agent routing.
+    await message_rate_limiter.check(redis, identifier=str(current_user.id))
+
+    await ChatService(db, provider_manager).get_authorized_conversation(conversation_id, current_user.id)
+
+    async def event_stream() -> AsyncIterator[str]:
+        async with async_session_factory() as stream_db:
+            async for event in stream_orchestrated(
+                stream_db, provider_manager, conversation_id, current_user.id, payload.content
+            ):
                 yield _format_sse(event["event"], event["data"])
 
     return StreamingResponse(
