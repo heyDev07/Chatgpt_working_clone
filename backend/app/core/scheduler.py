@@ -28,6 +28,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from app.config.settings import get_settings
 from app.db.database import async_session_factory
 from app.repositories.reminder_repo import ReminderRepository
+from app.services.push_service import send_push_notification
 
 logger = logging.getLogger("app.scheduler")
 
@@ -50,15 +51,19 @@ scheduler = AsyncIOScheduler(
 
 
 async def _deliver_reminder(reminder_id: str) -> None:
-    """The job body APScheduler actually runs at remind_at. Only marks the row delivered - it
-    doesn't push anything anywhere itself, since there's no email/push-notification channel
-    wired up yet. The frontend discovers delivered reminders by polling
-    GET /reminders?due=true and shows a toast; this function's whole job is making that query
-    start returning the row at the right time."""
+    """The job body APScheduler actually runs at remind_at. Marks the row delivered (what
+    GET /reminders?due=true polls for - see ReminderBell.tsx) and, separately, fans out a real
+    Web Push notification to every device the user has granted permission on (see
+    push_service.py) - that's what surfaces a reminder even when no tab is open, which polling
+    alone can never do. The two are independent: a push failure (or push simply not being
+    configured) must never stop the row from being marked delivered for the in-app path."""
     try:
         async with async_session_factory() as db:
-            await ReminderRepository(db).mark_delivered(uuid.UUID(reminder_id))
+            repo = ReminderRepository(db)
+            reminder = await repo.mark_delivered(uuid.UUID(reminder_id))
             await db.commit()
+            if reminder is not None:
+                await send_push_notification(db, reminder.user_id, "Reminder", reminder.message)
     except Exception:
         logger.exception("Failed to mark reminder %s delivered", reminder_id)
 

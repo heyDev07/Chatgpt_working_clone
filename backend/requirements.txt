@@ -29,3 +29,6 @@ prometheus-fastapi-instrumentator==6.1.0
 python-json-logger==4.1.0
 apscheduler==3.11.3
 psycopg2-binary==2.9.12
+py-vapid==1.9.4
+pywebpush==2.3.0
+http_ece==1.2.1

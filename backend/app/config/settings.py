@@ -81,6 +81,14 @@ class Settings(BaseSettings):
     linkedin_client_secret: str = ""
     linkedin_oauth_redirect_uri: str = "http://localhost:8000/api/v1/oauth/linkedin/callback"
 
+    # Web Push (reminder notifications that work even when the tab isn't open - see
+    # app/services/push_service.py). Generated once for this dev instance via py_vapid; a real
+    # deployment would generate its own and keep the private key out of version control the same
+    # way every other secret in .env already is.
+    vapid_public_key: str = "BCaAhL91ODPEj0mMr9kWeN5UaYhy0iXo4CCNDFxH8L8kXY_SXNvSVbaYD_tJMH_zMAbltcJWTIlz0olNcaN2jcI"
+    vapid_private_key: str = "vxIoeLE-hfsuZdMvmQy5rKuvtgh0LX8FZEYrn2NG1dc"
+    vapid_admin_email: str = "admin@example.com"
+
     # CORS
     cors_origins: str = "http://localhost:3000"
 

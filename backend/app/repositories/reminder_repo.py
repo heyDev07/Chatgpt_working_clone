@@ -39,15 +39,17 @@ class ReminderRepository:
         await self.db.delete(reminder)
         await self.db.flush()
 
-    async def mark_delivered(self, reminder_id: uuid.UUID) -> None:
+    async def mark_delivered(self, reminder_id: uuid.UUID) -> Reminder | None:
         """Looked up by id alone (not scoped to a user) - called from the scheduler's fired-job
         callback, which only ever has the id it scheduled the job with, not a request-scoped
-        user context."""
+        user context. Returns the row (or None if it was deleted before firing) so the caller can
+        fan out a push notification without a second query - see scheduler.py's _deliver_reminder."""
         result = await self.db.execute(select(Reminder).where(Reminder.id == reminder_id))
         reminder = result.scalar_one_or_none()
         if reminder is not None:
             reminder.is_delivered = True
             await self.db.flush()
+        return reminder
 
     async def list_due_undelivered(self, user_id: uuid.UUID) -> list[Reminder]:
         """Delivered-but-not-yet-seen reminders - the frontend polls this to show a toast the

@@ -12,6 +12,7 @@ import { useTheme, type Theme } from "@/lib/theme/ThemeContext";
 
 import { GoogleConnectSection } from "./GoogleConnectSection";
 import { LinkedInConnectSection } from "./LinkedInConnectSection";
+import { PushNotificationSection } from "./PushNotificationSection";
 
 const THEME_OPTIONS: { value: Theme; label: string; icon: typeof Sun }[] = [
   { value: "light", label: "Light", icon: Sun },
@@ -136,6 +137,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
 
           <GoogleConnectSection />
           <LinkedInConnectSection />
+          <PushNotificationSection />
 
           <DeleteAccountSection />
         </div>

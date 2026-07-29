@@ -12,6 +12,7 @@ from app.api.v1 import (
     memories,
     messages,
     oauth,
+    push,
     reminders,
     shared,
     tags,
@@ -32,5 +33,6 @@ api_router.include_router(reminders.router)
 api_router.include_router(contacts.router)
 api_router.include_router(oauth.router)
 api_router.include_router(linkedin_oauth.router)
+api_router.include_router(push.router)
 api_router.include_router(shared.router)
 api_router.include_router(admin.router)

@@ -9,6 +9,7 @@ from app.models.linkedin_credential import LinkedInCredential
 from app.models.memory import Memory
 from app.models.message import Message
 from app.models.message_attachment import MessageAttachment
+from app.models.push_subscription import PushSubscription
 from app.models.reminder import Reminder
 from app.models.session import Session
 from app.models.tag import Tag
@@ -32,4 +33,5 @@ __all__ = [
     "GoogleCredential",
     "Contact",
     "LinkedInCredential",
+    "PushSubscription",
 ]
