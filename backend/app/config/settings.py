@@ -69,6 +69,11 @@ class Settings(BaseSettings):
     google_client_id: str = ""
     google_client_secret: str = ""
     google_oauth_redirect_uri: str = "http://localhost:8000/api/v1/oauth/google/callback"
+    # Separate redirect_uri for "Sign in with Google" (app/services/google_login_service.py) -
+    # same OAuth client, but Google requires an exact registered match per redirect_uri, and this
+    # flow is a fundamentally different callback (creates/logs in a user, no existing session)
+    # from the Gmail/Calendar-connect one above, so it can't reuse that URI.
+    google_login_redirect_uri: str = "http://localhost:8000/api/v1/auth/google/callback"
 
     # CORS
     cors_origins: str = "http://localhost:3000"

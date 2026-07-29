@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, Request, Response
+from fastapi import APIRouter, Depends, Query, Request, Response
+from fastapi.responses import RedirectResponse
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -8,6 +9,7 @@ from app.core.exceptions import AuthError
 from app.middleware.rate_limit import login_rate_limiter, register_rate_limiter
 from app.models.user import User
 from app.schemas.auth import DeleteAccountRequest, LoginRequest, RegisterRequest, TokenResponse, UserOut
+from app.services import google_login_service
 from app.services.auth_service import AuthService
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -60,6 +62,36 @@ async def login(
 
     _set_refresh_cookie(response, refresh_token)
     return TokenResponse(access_token=access_token, expires_in=expires_in)
+
+
+@router.get("/google/authorize")
+async def google_authorize() -> RedirectResponse:
+    # A true redirect, not a JSON URL-to-navigate-to like oauth.py's Gmail-connect authorize -
+    # this route needs no Bearer token (nobody's logged in yet), so the frontend can link/navigate
+    # straight to it instead of needing an authenticated fetch first.
+    return RedirectResponse(url=google_login_service.build_login_authorize_url())
+
+
+@router.get("/google/callback")
+async def google_callback(
+    request: Request,
+    code: str = Query(...),
+    state: str = Query(...),
+    db: AsyncSession = Depends(get_db),
+) -> RedirectResponse:
+    # Unauthenticated by design, same reasoning as oauth.py's callback - this is Google
+    # redirecting the browser back, not an API call this app's own frontend makes.
+    _access_token, _expires_in, refresh_token = await google_login_service.handle_login_callback(
+        db, code, state, request.headers.get("user-agent"), request.client.host if request.client else None
+    )
+    # AuthProvider (frontend) picks the session up itself on mount via POST /auth/refresh, which
+    # reads the cookie set below - no need to pass the access_token through the URL at all. Set on
+    # the actually-returned RedirectResponse directly - the injected Response param FastAPI
+    # normally merges cookies from only applies to non-Response return values (see login() above),
+    # not when the handler returns its own Response subclass like this one does.
+    redirect = RedirectResponse(url="http://localhost:3000/chat")
+    _set_refresh_cookie(redirect, refresh_token)
+    return redirect
 
 
 @router.post("/refresh", response_model=TokenResponse)

@@ -7,6 +7,7 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 
+import { GoogleSignInButton } from "@/components/auth/GoogleSignInButton";
 import { ApiError } from "@/lib/api/client";
 import { useAuth } from "@/lib/auth/AuthContext";
 
@@ -39,51 +40,55 @@ export function LoginForm() {
   };
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4 w-full max-w-sm">
-      <div className="flex flex-col gap-1">
-        <label htmlFor="email" className="text-sm font-medium">
-          Email
-        </label>
-        <input
-          id="email"
-          type="email"
-          autoComplete="email"
-          className="rounded-md border border-black/10 dark:border-white/15 bg-transparent px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500"
-          {...register("email")}
-        />
-        {errors.email && <p className="text-sm text-red-500">{errors.email.message}</p>}
-      </div>
+    <div className="flex flex-col items-center gap-4 w-full max-w-sm">
+      <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4 w-full">
+        <div className="flex flex-col gap-1">
+          <label htmlFor="email" className="text-sm font-medium">
+            Email
+          </label>
+          <input
+            id="email"
+            type="email"
+            autoComplete="email"
+            className="rounded-md border border-black/10 dark:border-white/15 bg-transparent px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+            {...register("email")}
+          />
+          {errors.email && <p className="text-sm text-red-500">{errors.email.message}</p>}
+        </div>
 
-      <div className="flex flex-col gap-1">
-        <label htmlFor="password" className="text-sm font-medium">
-          Password
-        </label>
-        <input
-          id="password"
-          type="password"
-          autoComplete="current-password"
-          className="rounded-md border border-black/10 dark:border-white/15 bg-transparent px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500"
-          {...register("password")}
-        />
-        {errors.password && <p className="text-sm text-red-500">{errors.password.message}</p>}
-      </div>
+        <div className="flex flex-col gap-1">
+          <label htmlFor="password" className="text-sm font-medium">
+            Password
+          </label>
+          <input
+            id="password"
+            type="password"
+            autoComplete="current-password"
+            className="rounded-md border border-black/10 dark:border-white/15 bg-transparent px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+            {...register("password")}
+          />
+          {errors.password && <p className="text-sm text-red-500">{errors.password.message}</p>}
+        </div>
 
-      {serverError && <p className="text-sm text-red-500">{serverError}</p>}
+        {serverError && <p className="text-sm text-red-500">{serverError}</p>}
 
-      <button
-        type="submit"
-        disabled={isSubmitting}
-        className="rounded-md bg-blue-600 text-white text-sm font-medium py-2 disabled:opacity-50"
-      >
-        {isSubmitting ? "Signing in..." : "Sign in"}
-      </button>
+        <button
+          type="submit"
+          disabled={isSubmitting}
+          className="rounded-md bg-blue-600 text-white text-sm font-medium py-2 disabled:opacity-50"
+        >
+          {isSubmitting ? "Signing in..." : "Sign in"}
+        </button>
 
-      <p className="text-sm text-center text-black/60 dark:text-white/60">
-        No account?{" "}
-        <Link href="/register" className="text-blue-600 dark:text-blue-400 underline">
-          Register
-        </Link>
-      </p>
-    </form>
+        <p className="text-sm text-center text-black/60 dark:text-white/60">
+          No account?{" "}
+          <Link href="/register" className="text-blue-600 dark:text-blue-400 underline">
+            Register
+          </Link>
+        </p>
+      </form>
+
+      <GoogleSignInButton />
+    </div>
   );
 }
