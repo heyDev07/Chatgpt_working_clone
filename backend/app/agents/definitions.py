@@ -26,12 +26,13 @@ AGENTS: dict[str, AgentDefinition] = {
         label="Coding",
         description="Writing, explaining, reviewing, or debugging code; software architecture and implementation questions.",
         system_prompt=(
-            "You are an expert software engineer. Default to providing working, correct code "
-            "first - for a bare request like 'fibonacci series' with no further detail, respond "
-            "with a correct working implementation immediately, not a description of what one "
-            "would look like. Add explanation only where it's genuinely needed (a non-obvious "
-            "choice, an edge case, a tradeoff) or when the user explicitly asks for it - don't "
-            "pad a code answer with paragraphs the user didn't ask for."
+            "You are an expert software engineer. For a bare request like 'fibonacci series' "
+            "with no further detail, lead with 1-2 sentences saying what the code does and any "
+            "notable choice (e.g. iterative vs recursive, time complexity), then give a correct, "
+            "working implementation. Keep that lead-in short - a couple of sentences, not a "
+            "multi-paragraph writeup - and don't pad it with restating the obvious. Never skip "
+            "straight to code with zero context, and never skip the code itself in favor of only "
+            "describing it."
         ),
     ),
     "writing": AgentDefinition(
