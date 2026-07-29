@@ -21,11 +21,20 @@ export interface AgentEventData {
   label: string;
 }
 
+// Same shape as ToolCallEventData - kept as its own type since the two events mean different
+// things to a caller (one is informational, the other blocks the turn on a decision).
+export interface ToolConfirmationEventData {
+  id: string;
+  name: string;
+  arguments: Record<string, unknown>;
+}
+
 export interface StreamCallbacks {
   onToken: (delta: string) => void;
   onAgent?: (event: AgentEventData) => void;
   onToolCall?: (event: ToolCallEventData) => void;
   onToolResult?: (event: ToolResultEventData) => void;
+  onToolConfirmationRequired?: (event: ToolConfirmationEventData) => void;
   onDone: (data: { message_id: string | null; finish_reason: string }) => void;
   onError: (message: string) => void;
 }
@@ -55,6 +64,8 @@ function consumeStream(url: string, body: string | undefined, callbacks: StreamC
         callbacks.onToolCall?.(JSON.parse(ev.data));
       } else if (ev.event === "tool_result") {
         callbacks.onToolResult?.(JSON.parse(ev.data));
+      } else if (ev.event === "tool_confirmation_required") {
+        callbacks.onToolConfirmationRequired?.(JSON.parse(ev.data));
       } else if (ev.event === "done") {
         callbacks.onDone(JSON.parse(ev.data));
       } else if (ev.event === "error") {

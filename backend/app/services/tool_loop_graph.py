@@ -31,6 +31,7 @@ from langgraph.graph import END, StateGraph
 
 from app.agents.definitions import AgentDefinition
 from app.providers.base_provider import BaseProvider, ChatMessage, ToolCall, Usage
+from app.services.tool_confirmation import await_confirmation
 from app.tools.base import ToolResult
 from app.tools.router import ToolRouter
 
@@ -134,7 +135,31 @@ async def call_tools_node(state: ToolLoopState, config: RunnableConfig) -> dict:
                 success=False, error=f"Tool '{tool_call.name}' is not available to the '{agent_def.name}' agent"
             )
         else:
-            result = await ctx["tool_router"].call(ctx["user_id"], tool_call.name, arguments)
+            registered_tool = ctx["tool_router"].registry.get(tool_call.name)
+            needs_confirmation = (
+                registered_tool is not None and registered_tool.definition.permission_level == "restricted"
+            )
+            if needs_confirmation:
+                # Pauses this turn's background task (see await_confirmation's docstring) until
+                # the frontend's Approve/Reject action resolves it from a separate request, or it
+                # times out - either way the model always gets a real tool-role result back, never
+                # left hanging, so it can react ("okay, I won't send that") instead of erroring.
+                writer(
+                    {
+                        "event": "tool_confirmation_required",
+                        "data": {"id": tool_call.id, "name": tool_call.name, "arguments": arguments},
+                    }
+                )
+                approved = await await_confirmation(tool_call.id)
+                if not approved:
+                    result = ToolResult(
+                        success=False,
+                        error="The user did not approve this action - do not attempt it again this turn.",
+                    )
+                else:
+                    result = await ctx["tool_router"].call(ctx["user_id"], tool_call.name, arguments)
+            else:
+                result = await ctx["tool_router"].call(ctx["user_id"], tool_call.name, arguments)
 
         writer(
             {

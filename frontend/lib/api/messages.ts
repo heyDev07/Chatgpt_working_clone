@@ -19,3 +19,17 @@ export function setMessageFeedback(
 export function stopGeneration(conversationId: string): Promise<{ stopped: boolean }> {
   return apiFetch<{ stopped: boolean }>(`/conversations/${conversationId}/stop`, { method: "POST" });
 }
+
+// Resolves a tool call the backend paused on (see tool_confirmation.py) - a separate request from
+// the SSE stream itself, same reasoning as stopGeneration above: the background turn is waiting
+// on an asyncio.Future keyed by callId, not on anything this stream connection can signal.
+export function confirmToolCall(
+  conversationId: string,
+  callId: string,
+  approved: boolean
+): Promise<{ resolved: boolean }> {
+  return apiFetch<{ resolved: boolean }>(`/conversations/${conversationId}/tool-calls/${callId}/confirm`, {
+    method: "POST",
+    body: JSON.stringify({ approved }),
+  });
+}

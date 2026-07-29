@@ -30,6 +30,12 @@ from app.services.tool_loop_graph import TOOL_LOOP_GRAPH, ToolLoopContext, ToolL
 from app.storage.s3_client import download_bytes
 from app.tools.browser import PlaywrightBrowserSession
 from app.tools.contacts import ListContactsTool, UpsertContactTool
+from app.tools.google_workspace import (
+    CreateCalendarEventTool,
+    ListCalendarEventsTool,
+    SearchGmailTool,
+    SendGmailTool,
+)
 from app.tools.registry import build_playwright_tools, get_tool_registry
 from app.tools.reminders import CreateReminderTool
 from app.tools.router import ToolRouter
@@ -568,15 +574,22 @@ class ChatService:
         # browser_file_upload, which can read arbitrary files within the server's working
         # directory - see PLAYWRIGHT_ARGS' cwd) reachable from "general"/"coding"/etc too,
         # defeating the entire point of a dedicated scoped persona.
-        # create_reminder/upsert_contact/list_contacts are request-scoped (need this turn's
-        # user_id, which the model can't be trusted to supply itself as a plain argument) -
-        # merged into every turn's registry unconditionally, unlike browser_* tools below, since
-        # these are general requests any persona might reasonably get, not specific to one agent.
+        # create_reminder/upsert_contact/list_contacts/Gmail/Calendar tools are request-scoped
+        # (need this turn's user_id, which the model can't be trusted to supply itself as a plain
+        # argument) - merged into every turn's registry unconditionally, unlike browser_* tools
+        # below, since these are general requests any persona might reasonably get, not specific
+        # to one agent. The Gmail/Calendar tools fail gracefully with a clear "not connected"
+        # error from get_valid_access_token if the user hasn't done the OAuth flow in Settings -
+        # no need to conditionally merge them only for users who have.
         tool_registry = get_tool_registry().child_with(
             [
                 CreateReminderTool(conversation.user_id, conversation.id),
                 UpsertContactTool(conversation.user_id),
                 ListContactsTool(conversation.user_id),
+                SearchGmailTool(conversation.user_id),
+                ListCalendarEventsTool(conversation.user_id),
+                SendGmailTool(conversation.user_id),
+                CreateCalendarEventTool(conversation.user_id),
             ]
         )
         browser_session: PlaywrightBrowserSession | None = None

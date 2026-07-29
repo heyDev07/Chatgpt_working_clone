@@ -26,6 +26,14 @@ function describeActivity(call: ToolActivity): string {
       return args.prompt ? `Generating an image of "${args.prompt}"` : "Generating an image";
     case "browser_navigate":
       return args.url ? `Browsing to ${args.url}` : "Navigating";
+    case "search_gmail":
+      return args.query ? `Searching Gmail for "${args.query}"` : "Searching Gmail";
+    case "list_calendar_events":
+      return "Checking your calendar";
+    case "send_gmail":
+      return args.to ? `Sending email to ${args.to}` : "Sending email";
+    case "create_calendar_event":
+      return args.summary ? `Creating calendar event "${args.summary}"` : "Creating calendar event";
     default:
       if (call.name.startsWith("browser_")) return "Using the browser";
       // Fallback for anything not explicitly mapped: prettify the raw tool_name.
@@ -44,6 +52,7 @@ function pastTense(label: string): string {
     if (stem === "Browsing") return "Browsed";
     if (stem === "Us") return "Used";
     if (stem === "Query" || stem === "Querying") return "Queried";
+    if (stem === "Send") return "Sent";
     return `${stem}ed`;
   });
 }

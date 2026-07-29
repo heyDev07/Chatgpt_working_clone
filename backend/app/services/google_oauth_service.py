@@ -31,14 +31,18 @@ AUTHORIZE_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
 USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo"
 
-# Read-only Gmail/Calendar scopes for now, deliberately - this pass is about proving the OAuth
-# credentials actually work end-to-end (the user's explicit ask), not shipping send/write
-# capability yet. Widening to gmail.send/calendar write scopes is a real, separate decision:
-# Google's consent screen shows write scopes far more alarmingly to the user granting access,
-# and re-consent would be needed anyway once that's actually built.
+# Widened from read-only to include send/write now that send_gmail/create_calendar_event
+# (app/tools/google_workspace.py) exist - both of those are gated behind the human-in-the-loop
+# confirmation flow (tool_confirmation.py), which is what makes granting write scopes here an
+# acceptable tradeoff rather than handing the model unsupervised send/write access. Anyone who
+# connected under the old read-only scope set needs to reconnect (Disconnect + Connect again in
+# Settings) to actually get gmail.send/calendar.events on their stored credential - Google won't
+# retroactively widen an already-issued token's scope.
 GOOGLE_SCOPES = [
     "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/gmail.send",
     "https://www.googleapis.com/auth/calendar.readonly",
+    "https://www.googleapis.com/auth/calendar.events",
     "openid",
     "email",
 ]

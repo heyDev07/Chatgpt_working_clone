@@ -12,7 +12,8 @@ from app.db.database import async_session_factory
 from app.middleware.rate_limit import message_rate_limiter
 from app.models.user import User
 from app.providers.provider_manager import ProviderManager
-from app.schemas.message import MessageCreate, MessageFeedbackUpdate, MessageOut
+from app.schemas.message import MessageCreate, MessageFeedbackUpdate, MessageOut, ToolConfirmationRequest
+from app.services import tool_confirmation
 from app.services.chat_service import ChatService
 
 router = APIRouter(prefix="/conversations", tags=["messages"])
@@ -142,6 +143,23 @@ async def stop_generation(
     # the background task rather than just stopping the client from watching it.
     stopped = await ChatService(db, provider_manager).stop_generation(conversation_id, current_user.id)
     return {"stopped": stopped}
+
+
+@router.post("/{conversation_id}/tool-calls/{call_id}/confirm")
+async def confirm_tool_call(
+    conversation_id: uuid.UUID,
+    call_id: str,
+    payload: ToolConfirmationRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    provider_manager: ProviderManager = Depends(get_provider_manager),
+) -> dict:
+    # Authorization check only - conversation_id isn't otherwise used, call_id alone is what
+    # tool_confirmation's registry is keyed on. Still required so a user can't resolve a pending
+    # confirmation belonging to a conversation (and therefore a tool call) that isn't theirs.
+    await ChatService(db, provider_manager).get_authorized_conversation(conversation_id, current_user.id)
+    resolved = tool_confirmation.resolve_confirmation(call_id, payload.approved)
+    return {"resolved": resolved}
 
 
 @router.post("/{conversation_id}/regenerate")

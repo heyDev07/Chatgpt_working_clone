@@ -34,6 +34,10 @@ class MessageFeedbackUpdate(BaseModel):
     feedback: Literal["up", "down", None] = None
 
 
+class ToolConfirmationRequest(BaseModel):
+    approved: bool
+
+
 class MessageOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

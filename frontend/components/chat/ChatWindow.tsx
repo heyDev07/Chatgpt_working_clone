@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { Tooltip } from "@/components/ui/Tooltip";
 import { getConversation } from "@/lib/api/conversations";
-import { setMessageFeedback, stopGeneration } from "@/lib/api/messages";
+import { confirmToolCall, setMessageFeedback, stopGeneration } from "@/lib/api/messages";
 import { useAuth } from "@/lib/auth/AuthContext";
 import type { ComposerMode } from "@/lib/composerMode";
 import { greetingText } from "@/lib/greeting";
@@ -18,6 +18,7 @@ import {
   streamMessage,
   type AgentEventData,
   type ToolCallEventData,
+  type ToolConfirmationEventData,
   type ToolResultEventData,
 } from "@/lib/api/stream";
 import type { Message, ToolActivity } from "@/lib/types";
@@ -25,6 +26,7 @@ import type { Message, ToolActivity } from "@/lib/types";
 import { Composer } from "./Composer";
 import { ConversationSettings } from "./ConversationSettings";
 import { MessageList } from "./MessageList";
+import { ToolConfirmationPrompt } from "./ToolConfirmationPrompt";
 
 export function ChatWindow({ conversationId }: { conversationId: string }) {
   const queryClient = useQueryClient();
@@ -42,6 +44,11 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
   const [streamingContent, setStreamingContent] = useState<string | null>(null);
   const [toolActivity, setToolActivity] = useState<ToolActivity[]>([]);
   const [activeAgent, setActiveAgent] = useState<string | null>(null);
+  // A restricted tool (send_gmail, create_calendar_event) pauses the turn server-side until this
+  // is resolved via confirmToolCall - see tool_confirmation.py's docstring for why that's a
+  // separate request rather than something this stream connection can answer itself.
+  const [pendingConfirmation, setPendingConfirmation] = useState<ToolConfirmationEventData | null>(null);
+  const [isResolvingConfirmation, setIsResolvingConfirmation] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
@@ -100,6 +107,19 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
           : call
       )
     );
+  };
+
+  const handleToolConfirmationRequired = (event: ToolConfirmationEventData) => setPendingConfirmation(event);
+
+  const resolveConfirmation = async (approved: boolean) => {
+    if (!pendingConfirmation) return;
+    setIsResolvingConfirmation(true);
+    try {
+      await confirmToolCall(conversationId, pendingConfirmation.id, approved);
+      setPendingConfirmation(null);
+    } finally {
+      setIsResolvingConfirmation(false);
+    }
   };
 
   useEffect(() => {
@@ -179,6 +199,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
       onAgent: handleAgent,
       onToolCall: handleToolCall,
       onToolResult: handleToolResult,
+      onToolConfirmationRequired: handleToolConfirmationRequired,
       onDone: async () => {
         // Awaited before clearing the streaming placeholder below - invalidateQueries alone
         // marks the cache stale but doesn't wait for the refetch, so clearing
@@ -192,6 +213,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
         setStreamingContent(null);
         setToolActivity([]);
         setActiveAgent(null);
+        setPendingConfirmation(null);
         setPendingMessages([]);
         queryClient.invalidateQueries({ queryKey: ["conversations"] });
         if (isFirstMessage) scheduleTitleRefresh();
@@ -201,6 +223,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
         setStreamingContent(null);
         setToolActivity([]);
         setActiveAgent(null);
+        setPendingConfirmation(null);
         setError(message);
       },
     };
@@ -255,6 +278,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
           onAgent: handleAgent,
           onToolCall: handleToolCall,
           onToolResult: handleToolResult,
+          onToolConfirmationRequired: handleToolConfirmationRequired,
           onDone: async () => {
             await queryClient.invalidateQueries({ queryKey: ["conversation", conversationId] });
             setIsSending(false);
@@ -262,6 +286,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
             setStreamingContent(null);
             setToolActivity([]);
             setActiveAgent(null);
+            setPendingConfirmation(null);
             queryClient.invalidateQueries({ queryKey: ["conversations"] });
           },
           onError: (message) => {
@@ -270,6 +295,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
             setStreamingContent(null);
             setToolActivity([]);
             setActiveAgent(null);
+            setPendingConfirmation(null);
             setError(message);
           },
         },
@@ -292,6 +318,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
           onAgent: handleAgent,
           onToolCall: handleToolCall,
           onToolResult: handleToolResult,
+          onToolConfirmationRequired: handleToolConfirmationRequired,
           onDone: async () => {
             await queryClient.invalidateQueries({ queryKey: ["conversation", conversationId] });
             setIsSending(false);
@@ -299,6 +326,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
             setStreamingContent(null);
             setToolActivity([]);
             setActiveAgent(null);
+            setPendingConfirmation(null);
             queryClient.invalidateQueries({ queryKey: ["conversations"] });
             if (isFirstMessage) scheduleTitleRefresh();
           },
@@ -308,6 +336,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
             setStreamingContent(null);
             setToolActivity([]);
             setActiveAgent(null);
+            setPendingConfirmation(null);
             setError(message);
           },
         },
@@ -417,6 +446,14 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
                 Retry
               </button>
             </div>
+          )}
+          {pendingConfirmation && (
+            <ToolConfirmationPrompt
+              call={pendingConfirmation}
+              isResolving={isResolvingConfirmation}
+              onApprove={() => resolveConfirmation(true)}
+              onReject={() => resolveConfirmation(false)}
+            />
           )}
           <Composer
             onSend={handleSend}
