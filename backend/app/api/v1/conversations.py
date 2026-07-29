@@ -2,7 +2,7 @@ import uuid
 from typing import Literal
 
 from fastapi import APIRouter, Depends
-from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.responses import JSONResponse, PlainTextResponse, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db, get_provider_manager
@@ -16,7 +16,7 @@ from app.schemas.conversation import (
 )
 from app.schemas.folder import ConversationFolderUpdate
 from app.services.conversation_service import ConversationService
-from app.services.export_service import slugify, to_markdown
+from app.services.export_service import slugify, to_markdown, to_pdf
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
 
@@ -63,7 +63,7 @@ async def get_conversation(
 @router.get("/{conversation_id}/export")
 async def export_conversation(
     conversation_id: uuid.UUID,
-    format: Literal["markdown", "json"] = "markdown",
+    format: Literal["markdown", "json", "pdf"] = "markdown",
     current_user: User = Depends(get_current_user),
     service: ConversationService = Depends(_get_service),
 ):
@@ -75,6 +75,13 @@ async def export_conversation(
         return JSONResponse(
             content=payload,
             headers={"Content-Disposition": f'attachment; filename="{filename}.json"'},
+        )
+
+    if format == "pdf":
+        return Response(
+            content=to_pdf(conversation),
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="{filename}.pdf"'},
         )
 
     return PlainTextResponse(

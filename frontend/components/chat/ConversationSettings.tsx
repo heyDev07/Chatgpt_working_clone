@@ -20,7 +20,7 @@ function downloadBlob(blob: Blob, filename: string) {
 
 function ExportSection({ conversation }: { conversation: ConversationDetail }) {
   const { mutate: exportAs, isPending, variables } = useMutation({
-    mutationFn: (format: "markdown" | "json") => exportConversation(conversation.id, format),
+    mutationFn: (format: "markdown" | "json" | "pdf") => exportConversation(conversation.id, format),
     onSuccess: ({ blob, filename }) => downloadBlob(blob, filename),
   });
 
@@ -35,6 +35,14 @@ function ExportSection({ conversation }: { conversation: ConversationDetail }) {
         >
           <Download size={12} />
           {isPending && variables === "markdown" ? "Exporting..." : "Markdown"}
+        </button>
+        <button
+          onClick={() => exportAs("pdf")}
+          disabled={isPending}
+          className="flex-1 flex items-center justify-center gap-1.5 rounded-lg border border-black/10 dark:border-white/15 px-3 py-1.5 text-xs text-black/70 hover:bg-black/5 dark:text-white/70 dark:hover:bg-white/10 disabled:opacity-50"
+        >
+          <Download size={12} />
+          {isPending && variables === "pdf" ? "Exporting..." : "PDF"}
         </button>
         <button
           onClick={() => exportAs("json")}

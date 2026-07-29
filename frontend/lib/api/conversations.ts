@@ -65,11 +65,17 @@ export function unshareConversation(id: string): Promise<Conversation> {
   return apiFetch<Conversation>(`/conversations/${id}/share`, { method: "DELETE" });
 }
 
+const EXPORT_EXTENSIONS: Record<"markdown" | "json" | "pdf", string> = {
+  markdown: "md",
+  json: "json",
+  pdf: "pdf",
+};
+
 export async function exportConversation(
   id: string,
-  format: "markdown" | "json"
+  format: "markdown" | "json" | "pdf"
 ): Promise<{ blob: Blob; filename: string }> {
-  // apiFetch always parses the body as JSON, which doesn't work for a markdown/blob download -
+  // apiFetch always parses the body as JSON, which doesn't work for a markdown/pdf/blob download -
   // this bypasses it to read the raw Content-Disposition filename and body instead.
   const headers = new Headers();
   const token = getAccessToken();
@@ -84,7 +90,7 @@ export async function exportConversation(
   }
 
   const disposition = response.headers.get("Content-Disposition") ?? "";
-  const filename = /filename="([^"]+)"/.exec(disposition)?.[1] ?? `conversation.${format === "json" ? "json" : "md"}`;
+  const filename = /filename="([^"]+)"/.exec(disposition)?.[1] ?? `conversation.${EXPORT_EXTENSIONS[format]}`;
   const blob = await response.blob();
   return { blob, filename };
 }

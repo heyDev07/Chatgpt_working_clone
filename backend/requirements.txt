@@ -32,3 +32,6 @@ psycopg2-binary==2.9.12
 py-vapid==1.9.4
 pywebpush==2.3.0
 http_ece==1.2.1
+defusedxml==0.7.1
+fonttools==4.63.0
+fpdf2==2.8.7
