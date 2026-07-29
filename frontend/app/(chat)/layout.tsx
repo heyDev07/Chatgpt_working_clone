@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState, type ReactNode } from "react";
+import { Suspense, useEffect, useState, type ReactNode } from "react";
 
 import { ContactManager } from "@/components/contacts/ContactManager";
 import { DocumentManager } from "@/components/documents/DocumentManager";
@@ -27,10 +27,30 @@ import { TagFilterBar } from "@/components/sidebar/TagFilterBar";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { useAuth } from "@/lib/auth/AuthContext";
 
+// useSearchParams() opts a page out of static prerendering unless isolated behind a Suspense
+// boundary (Next.js requirement) - split into its own leaf so only this tiny component needs
+// the boundary, rather than deopting every page under this layout (including /admin).
+function OAuthCallbackWatcher({ onGoogleConnected }: { onGoogleConnected: () => void }) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
+  // The OAuth callback (backend, oauth.py) redirects here with this query param since /settings
+  // isn't a real routed page in this app - Settings is a modal opened by state. Cleans the URL
+  // via replace so a refresh doesn't re-trigger the modal open.
+  useEffect(() => {
+    if (searchParams.get("google_connected") === "true") {
+      onGoogleConnected();
+      router.replace("/chat");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only re-check when the query param itself changes
+  }, [searchParams]);
+
+  return null;
+}
+
 export default function ChatLayout({ children }: { children: ReactNode }) {
   const { user, isLoading, logout } = useAuth();
   const router = useRouter();
-  const searchParams = useSearchParams();
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [showMemories, setShowMemories] = useState(false);
   const [showDocuments, setShowDocuments] = useState(false);
@@ -38,17 +58,6 @@ export default function ChatLayout({ children }: { children: ReactNode }) {
   const [showSettings, setShowSettings] = useState(false);
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [selectedTagId, setSelectedTagId] = useState<string | null>(null);
-
-  // The OAuth callback (backend, oauth.py) redirects here with this query param since /settings
-  // isn't a real routed page in this app - Settings is a modal opened by state. Cleans the URL
-  // via replace so a refresh doesn't re-trigger the modal open.
-  useEffect(() => {
-    if (searchParams.get("google_connected") === "true") {
-      setShowSettings(true);
-      router.replace("/chat");
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- only re-check when the query param itself changes
-  }, [searchParams]);
 
   useEffect(() => {
     if (!isLoading && !user) {
@@ -181,6 +190,9 @@ export default function ChatLayout({ children }: { children: ReactNode }) {
           since the button only renders then. */}
       <div className={`flex flex-1 flex-col overflow-hidden ${!isSidebarOpen ? "pl-12" : ""}`}>{children}</div>
 
+      <Suspense fallback={null}>
+        <OAuthCallbackWatcher onGoogleConnected={() => setShowSettings(true)} />
+      </Suspense>
       {showMemories && <MemoryManager onClose={() => setShowMemories(false)} />}
       {showDocuments && <DocumentManager onClose={() => setShowDocuments(false)} />}
       {showContacts && <ContactManager onClose={() => setShowContacts(false)} />}
