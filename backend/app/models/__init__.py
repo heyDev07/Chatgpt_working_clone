@@ -5,6 +5,7 @@ from app.models.conversation_summary import ConversationSummary
 from app.models.document import Document
 from app.models.folder import Folder
 from app.models.google_credential import GoogleCredential
+from app.models.linkedin_credential import LinkedInCredential
 from app.models.memory import Memory
 from app.models.message import Message
 from app.models.message_attachment import MessageAttachment
@@ -30,4 +31,5 @@ __all__ = [
     "Reminder",
     "GoogleCredential",
     "Contact",
+    "LinkedInCredential",
 ]

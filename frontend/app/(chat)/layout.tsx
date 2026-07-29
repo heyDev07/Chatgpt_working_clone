@@ -30,16 +30,18 @@ import { useAuth } from "@/lib/auth/AuthContext";
 // useSearchParams() opts a page out of static prerendering unless isolated behind a Suspense
 // boundary (Next.js requirement) - split into its own leaf so only this tiny component needs
 // the boundary, rather than deopting every page under this layout (including /admin).
-function OAuthCallbackWatcher({ onGoogleConnected }: { onGoogleConnected: () => void }) {
+function OAuthCallbackWatcher({ onConnected }: { onConnected: () => void }) {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  // The OAuth callback (backend, oauth.py) redirects here with this query param since /settings
-  // isn't a real routed page in this app - Settings is a modal opened by state. Cleans the URL
-  // via replace so a refresh doesn't re-trigger the modal open.
+  // Both OAuth callbacks (backend, oauth.py / linkedin_oauth.py) redirect here with their own
+  // query param since /settings isn't a real routed page in this app - Settings is a modal
+  // opened by state. Same resulting action either way (open Settings so the user sees the
+  // connection succeeded), so one check covers both rather than duplicating this effect. Cleans
+  // the URL via replace so a refresh doesn't re-trigger the modal open.
   useEffect(() => {
-    if (searchParams.get("google_connected") === "true") {
-      onGoogleConnected();
+    if (searchParams.get("google_connected") === "true" || searchParams.get("linkedin_connected") === "true") {
+      onConnected();
       router.replace("/chat");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only re-check when the query param itself changes
@@ -191,7 +193,7 @@ export default function ChatLayout({ children }: { children: ReactNode }) {
       <div className={`flex flex-1 flex-col overflow-hidden ${!isSidebarOpen ? "pl-12" : ""}`}>{children}</div>
 
       <Suspense fallback={null}>
-        <OAuthCallbackWatcher onGoogleConnected={() => setShowSettings(true)} />
+        <OAuthCallbackWatcher onConnected={() => setShowSettings(true)} />
       </Suspense>
       {showMemories && <MemoryManager onClose={() => setShowMemories(false)} />}
       {showDocuments && <DocumentManager onClose={() => setShowDocuments(false)} />}

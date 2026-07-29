@@ -11,6 +11,7 @@ import { useAuth } from "@/lib/auth/AuthContext";
 import { useTheme, type Theme } from "@/lib/theme/ThemeContext";
 
 import { GoogleConnectSection } from "./GoogleConnectSection";
+import { LinkedInConnectSection } from "./LinkedInConnectSection";
 
 const THEME_OPTIONS: { value: Theme; label: string; icon: typeof Sun }[] = [
   { value: "light", label: "Light", icon: Sun },
@@ -134,6 +135,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
           </div>
 
           <GoogleConnectSection />
+          <LinkedInConnectSection />
 
           <DeleteAccountSection />
         </div>

@@ -75,6 +75,12 @@ class Settings(BaseSettings):
     # from the Gmail/Calendar-connect one above, so it can't reuse that URI.
     google_login_redirect_uri: str = "http://localhost:8000/api/v1/auth/google/callback"
 
+    # LinkedIn connect (profile identity only - see linkedin_oauth_service.py's docstring for
+    # why there's no LinkedIn tools file the way google_workspace.py exists for Google).
+    linkedin_client_id: str = ""
+    linkedin_client_secret: str = ""
+    linkedin_oauth_redirect_uri: str = "http://localhost:8000/api/v1/oauth/linkedin/callback"
+
     # CORS
     cors_origins: str = "http://localhost:3000"
 
