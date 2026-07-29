@@ -38,6 +38,10 @@ class ContactService:
         if last_contact_at is not None:
             existing.last_contact_at = last_contact_at
         await self.db.commit()
+        # updated_at is server-computed (onupdate=func.now()) - unlike a fresh INSERT, an UPDATE
+        # doesn't eagerly refetch it, so it's left needing a lazy reload that fails outside the
+        # async greenlet during response serialization. Refresh explicitly while still in-session.
+        await self.db.refresh(existing)
         return existing
 
     async def list_for_user(self, user_id: uuid.UUID) -> list[Contact]:
