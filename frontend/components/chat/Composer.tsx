@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowUp, ImagePlus, Mic, Square, X } from "lucide-react";
+import { ArrowUp, ChevronDown, ImagePlus, Mic, Square, X } from "lucide-react";
 import { useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
 
 import { Tooltip } from "@/components/ui/Tooltip";
@@ -28,13 +28,20 @@ export function Composer({
   onSend,
   onStop,
   disabled,
+  mode,
+  onModeChange,
 }: {
   onSend: (content: string, attachmentIds: string[], mode: ComposerMode) => void;
   onStop: () => void;
   disabled?: boolean;
+  // Owned by the parent, not this component - Composer gets unmounted and remounted as the
+  // conversation transitions between layout states (see ChatWindow's empty-state vs.
+  // has-messages branches), which would otherwise silently reset the selection to "auto" mid-use.
+  mode: ComposerMode;
+  onModeChange: (mode: ComposerMode) => void;
 }) {
   const [value, setValue] = useState("");
-  const [mode, setMode] = useState<ComposerMode>("auto");
+  const [isModeMenuOpen, setIsModeMenuOpen] = useState(false);
   const [pending, setPending] = useState<PendingAttachment[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [voiceMode, setVoiceMode] = useState<VoiceMode>("idle");
@@ -223,21 +230,38 @@ export function Composer({
       <div className="mx-auto max-w-3xl">
         {/* Explicit mode overrides - "auto" (default) leaves the existing classify-and-respond
             pipeline completely untouched; the other three are additive, not replacements. */}
-        <div className="mb-1.5 flex items-center gap-1.5">
-          {COMPOSER_MODES.map((m) => (
-            <Tooltip key={m.value} label={m.description}>
-              <button
-                onClick={() => setMode(m.value)}
-                className={`rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
-                  mode === m.value
-                    ? "bg-black text-white dark:bg-white dark:text-black"
-                    : "bg-black/5 text-black/50 hover:bg-black/10 dark:bg-white/10 dark:text-white/50 dark:hover:bg-white/15"
-                }`}
-              >
-                {m.label}
-              </button>
-            </Tooltip>
-          ))}
+        <div className="relative mb-1.5">
+          <button
+            onClick={() => setIsModeMenuOpen((prev) => !prev)}
+            className="flex items-center gap-1 rounded-full bg-black/5 px-2.5 py-1 text-xs font-medium text-black/60 hover:bg-black/10 dark:bg-white/10 dark:text-white/60 dark:hover:bg-white/15"
+          >
+            {COMPOSER_MODES.find((m) => m.value === mode)?.label}
+            <ChevronDown size={12} className={isModeMenuOpen ? "rotate-180 transition-transform" : "transition-transform"} />
+          </button>
+          {isModeMenuOpen && (
+            <>
+              <div className="fixed inset-0 z-40" onClick={() => setIsModeMenuOpen(false)} />
+              <div className="absolute bottom-full left-0 z-50 mb-2 w-56 rounded-xl border border-black/10 bg-white p-1 shadow-lg dark:border-white/10 dark:bg-neutral-800">
+                {COMPOSER_MODES.map((m) => (
+                  <button
+                    key={m.value}
+                    onClick={() => {
+                      onModeChange(m.value);
+                      setIsModeMenuOpen(false);
+                    }}
+                    className={`flex w-full flex-col items-start rounded-lg px-2.5 py-1.5 text-left ${
+                      mode === m.value
+                        ? "bg-black/5 dark:bg-white/10"
+                        : "hover:bg-black/5 dark:hover:bg-white/10"
+                    }`}
+                  >
+                    <span className="text-sm font-medium text-black/80 dark:text-white/80">{m.label}</span>
+                    <span className="text-xs text-black/40 dark:text-white/40">{m.description}</span>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
         </div>
         <div className="rounded-[28px] border border-black/10 dark:border-white/15 bg-white dark:bg-neutral-800 shadow-sm px-4 py-2.5">
           {pending.length > 0 && (

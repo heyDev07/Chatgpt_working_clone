@@ -45,6 +45,11 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  // Owned here rather than inside Composer - this component renders two separate <Composer>
+  // instances (empty-state vs. has-messages, below) that React unmounts/remounts as the
+  // conversation transitions between them, which would silently reset any state Composer owned
+  // itself back to its default the moment the first message started sending.
+  const [composerMode, setComposerMode] = useState<ComposerMode>("auto");
   const abortRef = useRef<AbortController | null>(null);
 
   // Batches SSE token deltas into one state update per animation frame instead of one per
@@ -223,6 +228,10 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
       const pending = JSON.parse(raw) as PendingFirstMessage;
       if (pending.conversationId === conversationId) {
         sessionStorage.removeItem(PENDING_FIRST_MESSAGE_KEY);
+        // Genuine one-time sync from an external source (sessionStorage) into React state, not a
+        // cascading-render anti-pattern - nothing in this render path could set this key itself.
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setComposerMode(pending.mode);
         // Deferred a tick rather than called directly: handleSend's first act is a setState
         // (the optimistic pending-message append), and calling that synchronously inside an
         // effect body risks a cascading render - queueMicrotask moves it out of the effect's
@@ -373,7 +382,13 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
         <div className="flex-1 flex flex-col items-center justify-center gap-6 px-4">
           <h1 className="text-3xl font-semibold text-black/80 dark:text-white/80">{greetingText(user)}</h1>
           <div className="w-full max-w-3xl">
-            <Composer onSend={handleSend} onStop={handleStop} disabled={isSending} />
+            <Composer
+              onSend={handleSend}
+              onStop={handleStop}
+              disabled={isSending}
+              mode={composerMode}
+              onModeChange={setComposerMode}
+            />
           </div>
           {error && (
             <div className="flex items-center gap-3 text-sm text-red-500">
@@ -403,7 +418,13 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
               </button>
             </div>
           )}
-          <Composer onSend={handleSend} onStop={handleStop} disabled={isSending} />
+          <Composer
+            onSend={handleSend}
+            onStop={handleStop}
+            disabled={isSending}
+            mode={composerMode}
+            onModeChange={setComposerMode}
+          />
         </>
       )}
       {showSettings && conversation && (
