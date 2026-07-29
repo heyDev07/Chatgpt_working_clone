@@ -1,4 +1,5 @@
 from app.models.base import Base
+from app.models.contact import Contact
 from app.models.conversation import Conversation
 from app.models.conversation_summary import ConversationSummary
 from app.models.document import Document
@@ -28,4 +29,5 @@ __all__ = [
     "MessageAttachment",
     "Reminder",
     "GoogleCredential",
+    "Contact",
 ]

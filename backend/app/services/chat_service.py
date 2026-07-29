@@ -29,6 +29,7 @@ from app.services.title_generation import run_title_generation
 from app.services.tool_loop_graph import TOOL_LOOP_GRAPH, ToolLoopContext, ToolLoopState
 from app.storage.s3_client import download_bytes
 from app.tools.browser import PlaywrightBrowserSession
+from app.tools.contacts import ListContactsTool, UpsertContactTool
 from app.tools.registry import build_playwright_tools, get_tool_registry
 from app.tools.reminders import CreateReminderTool
 from app.tools.router import ToolRouter
@@ -567,11 +568,17 @@ class ChatService:
         # browser_file_upload, which can read arbitrary files within the server's working
         # directory - see PLAYWRIGHT_ARGS' cwd) reachable from "general"/"coding"/etc too,
         # defeating the entire point of a dedicated scoped persona.
-        # create_reminder is request-scoped (needs this turn's user_id, which the model can't be
-        # trusted to supply itself as a plain argument) - merged into every turn's registry
-        # unconditionally, unlike browser_* tools below, since "remind me about X" is a general
-        # request any persona might reasonably get, not something specific to one agent.
-        tool_registry = get_tool_registry().child_with([CreateReminderTool(conversation.user_id, conversation.id)])
+        # create_reminder/upsert_contact/list_contacts are request-scoped (need this turn's
+        # user_id, which the model can't be trusted to supply itself as a plain argument) -
+        # merged into every turn's registry unconditionally, unlike browser_* tools below, since
+        # these are general requests any persona might reasonably get, not specific to one agent.
+        tool_registry = get_tool_registry().child_with(
+            [
+                CreateReminderTool(conversation.user_id, conversation.id),
+                UpsertContactTool(conversation.user_id),
+                ListContactsTool(conversation.user_id),
+            ]
+        )
         browser_session: PlaywrightBrowserSession | None = None
         if selected_agent == "browser":
             browser_session = PlaywrightBrowserSession()

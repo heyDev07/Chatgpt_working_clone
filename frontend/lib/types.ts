@@ -84,3 +84,13 @@ export interface Reminder {
   is_delivered: boolean;
   created_at: string;
 }
+
+export interface Contact {
+  id: string;
+  name: string;
+  relationship: string | null;
+  notes: string | null;
+  last_contact_at: string | null;
+  created_at: string;
+  updated_at: string;
+}

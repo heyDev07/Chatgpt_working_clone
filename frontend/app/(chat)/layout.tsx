@@ -9,11 +9,13 @@ import {
   Settings,
   ShieldCheck,
   Sparkles,
+  Users,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 
+import { ContactManager } from "@/components/contacts/ContactManager";
 import { DocumentManager } from "@/components/documents/DocumentManager";
 import { MemoryManager } from "@/components/memory/MemoryManager";
 import { ReminderBell } from "@/components/reminders/ReminderBell";
@@ -32,6 +34,7 @@ export default function ChatLayout({ children }: { children: ReactNode }) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [showMemories, setShowMemories] = useState(false);
   const [showDocuments, setShowDocuments] = useState(false);
+  const [showContacts, setShowContacts] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [selectedTagId, setSelectedTagId] = useState<string | null>(null);
@@ -116,6 +119,13 @@ export default function ChatLayout({ children }: { children: ReactNode }) {
             <BrainCog size={16} />
             Memories
           </button>
+          <button
+            onClick={() => setShowContacts(true)}
+            className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-black/70 hover:bg-black/5 dark:text-white/70 dark:hover:bg-white/10"
+          >
+            <Users size={16} />
+            Contacts
+          </button>
           {user.role === "admin" && (
             <Link
               href="/admin"
@@ -173,6 +183,7 @@ export default function ChatLayout({ children }: { children: ReactNode }) {
 
       {showMemories && <MemoryManager onClose={() => setShowMemories(false)} />}
       {showDocuments && <DocumentManager onClose={() => setShowDocuments(false)} />}
+      {showContacts && <ContactManager onClose={() => setShowContacts(false)} />}
       {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
     </div>
   );
