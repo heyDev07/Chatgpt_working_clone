@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config.settings import get_settings
 from app.core.exceptions import ValidationAppError
+from app.core.http_retry import request_with_retry
 from app.models.linkedin_credential import LinkedInCredential
 
 AUTHORIZE_URL = "https://www.linkedin.com/oauth/v2/authorization"
@@ -77,7 +78,9 @@ class LinkedInOAuthService:
         settings = get_settings()
 
         async with httpx.AsyncClient(timeout=15.0) as client:
-            token_response = await client.post(
+            token_response = await request_with_retry(
+                client,
+                "POST",
                 TOKEN_URL,
                 data={
                     "grant_type": "authorization_code",
@@ -91,8 +94,8 @@ class LinkedInOAuthService:
             token_response.raise_for_status()
             tokens = token_response.json()
 
-            userinfo_response = await client.get(
-                USERINFO_URL, headers={"Authorization": f"Bearer {tokens['access_token']}"}
+            userinfo_response = await request_with_retry(
+                client, "GET", USERINFO_URL, headers={"Authorization": f"Bearer {tokens['access_token']}"}
             )
             userinfo_response.raise_for_status()
             profile = userinfo_response.json()
