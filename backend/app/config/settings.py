@@ -63,16 +63,22 @@ class Settings(BaseSettings):
     # SQL runs under - query-string validation in the tool is a second layer, not the only one.
     sql_demo_db_password: str = "sql_demo_readonly_pw"
 
-    # Google OAuth (Gmail + Calendar) - one client covers both, scopes requested per-flow rather
-    # than needing separate apps. Empty defaults mean the connect flow is simply unavailable
-    # until configured, same graceful-degradation pattern as tavily_api_key above.
+    # Google OAuth (Gmail + Calendar connect - google_oauth_service.py). Empty defaults mean the
+    # connect flow is simply unavailable until configured, same graceful-degradation pattern as
+    # tavily_api_key above.
     google_client_id: str = ""
     google_client_secret: str = ""
     google_oauth_redirect_uri: str = "http://localhost:8000/api/v1/oauth/google/callback"
-    # Separate redirect_uri for "Sign in with Google" (app/services/google_login_service.py) -
-    # same OAuth client, but Google requires an exact registered match per redirect_uri, and this
-    # flow is a fundamentally different callback (creates/logs in a user, no existing session)
-    # from the Gmail/Calendar-connect one above, so it can't reuse that URI.
+    # Deliberately a *separate* Google Cloud project/OAuth client from the one above, not just a
+    # separate redirect_uri on the same client - Google's Testing/Production publishing status
+    # and declared-scopes list are project-wide, not per-client, so a client sharing a project
+    # with the sensitive gmail.send/calendar.events scopes above could never be published to
+    # Production without full verification review, even if this specific flow only ever requests
+    # non-sensitive openid/email/profile. A dedicated project that never touches Gmail/Calendar
+    # scopes can self-publish to Production instantly, letting any Google account sign in without
+    # being manually added as a test user - see google_login_service.py.
+    google_login_client_id: str = ""
+    google_login_client_secret: str = ""
     google_login_redirect_uri: str = "http://localhost:8000/api/v1/auth/google/callback"
 
     # LinkedIn connect (profile identity only - see linkedin_oauth_service.py's docstring for

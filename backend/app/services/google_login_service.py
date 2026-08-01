@@ -52,10 +52,10 @@ def _verify_login_state(state: str) -> None:
 
 def build_login_authorize_url() -> str:
     settings = get_settings()
-    if not settings.google_client_id:
+    if not settings.google_login_client_id:
         raise ValidationAppError("Google sign-in is not configured on this server")
     params = {
-        "client_id": settings.google_client_id,
+        "client_id": settings.google_login_client_id,
         "redirect_uri": settings.google_login_redirect_uri,
         "response_type": "code",
         "scope": " ".join(GOOGLE_LOGIN_SCOPES),
@@ -80,8 +80,8 @@ async def handle_login_callback(
             TOKEN_URL,
             data={
                 "code": code,
-                "client_id": settings.google_client_id,
-                "client_secret": settings.google_client_secret,
+                "client_id": settings.google_login_client_id,
+                "client_secret": settings.google_login_client_secret,
                 "redirect_uri": settings.google_login_redirect_uri,
                 "grant_type": "authorization_code",
             },
