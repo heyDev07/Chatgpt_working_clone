@@ -38,3 +38,9 @@ tool_call_duration_seconds = Histogram(
     ["tool_name"],
     buckets=(0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30),
 )
+
+semantic_cache_lookups_total = Counter(
+    "semantic_cache_lookups_total",
+    "Semantic cache lookups attempted for eligible turns, by result",
+    ["result"],  # "hit" or "miss"
+)

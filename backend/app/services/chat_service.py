@@ -11,7 +11,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.agents.definitions import DEFAULT_AGENT, get_agent
 from app.config.settings import get_settings
 from app.core.exceptions import NotFoundError, ProviderError
-from app.core.metrics import llm_request_duration_seconds, llm_requests_total, llm_tokens_total
+from app.core.metrics import (
+    llm_request_duration_seconds,
+    llm_requests_total,
+    llm_tokens_total,
+    semantic_cache_lookups_total,
+)
 from app.db.database import async_session_factory
 from app.models.conversation import Conversation
 from app.models.message import Message
@@ -40,6 +45,7 @@ from app.tools.registry import build_playwright_tools, get_tool_registry
 from app.tools.reminders import CreateReminderTool
 from app.tools.router import ToolRouter
 from app.vectorstore.qdrant_client import search as search_document_chunks
+from app.vectorstore.semantic_cache import find_cached_answer, store_cache_entry
 
 logger = logging.getLogger("app.summarization")
 
@@ -483,10 +489,82 @@ class ChatService:
             logger.exception("Document retrieval failed for user %s, continuing without it", user_id)
             return None, []
 
+    async def _check_semantic_cache(self, user_id: uuid.UUID, query_text: str) -> tuple[list[float] | None, str | None]:
+        """Best-effort: embeds the question and checks it against this user's previously-cached
+        answers (see vectorstore/semantic_cache.py). Never raises - an embedding-provider hiccup
+        or a Qdrant outage should fall through to a normal LLM call, not break the turn. The query
+        vector is returned even on a miss so the caller can reuse it to store this turn's own
+        answer later without a second embedding call."""
+        settings = get_settings()
+        try:
+            provider = self.provider_manager.get_provider(settings.embedding_provider)
+            vectors = await provider.embed_texts(
+                [query_text], settings.embedding_model, output_dimensionality=settings.embedding_dimensions
+            )
+            if not vectors or not vectors[0]:
+                return None, None
+            cached_answer = await find_cached_answer(user_id, vectors[0])
+            semantic_cache_lookups_total.labels(result="hit" if cached_answer else "miss").inc()
+            return vectors[0], cached_answer
+        except Exception:
+            logger.exception("Semantic cache lookup failed for user %s, continuing without it", user_id)
+            return None, None
+
+    async def _store_semantic_cache(self, user_id: uuid.UUID, question: str, answer: str, query_vector: list[float]) -> None:
+        try:
+            await store_cache_entry(user_id, question, answer, query_vector)
+        except Exception:
+            logger.exception("Semantic cache store failed for user %s, continuing without it", user_id)
+
     async def _generate_and_persist(
         self, conversation: Conversation, history: list[Message], forced_agent: str | None = None
     ) -> AsyncIterator[dict]:
         provider = self.provider_manager.get_provider(conversation.provider)
+
+        # Semantic caching is deliberately scoped tight: only the first message of a brand-new
+        # conversation (a follow-up's real meaning depends on everything said before it, which a
+        # single-message embedding can't capture - "what about the second one?" would need the
+        # whole thread to mean anything), only in auto mode (forced_agent means the user
+        # explicitly picked Code/Write/Agent, not a plain Q&A this cache is meant for), and only
+        # with no attachments (an image's content isn't in the embedded text at all). A hit skips
+        # the rest of this method entirely - no RAG, no tool loop, no classifier - since those are
+        # exactly the things that could make a cached answer wrong for a superficially-similar
+        # question, so this check has to happen before any of them, not after.
+        cache_eligible = (
+            forced_agent is None
+            and len(history) == 1
+            and history[-1].role == "user"
+            and not history[-1].attachments
+        )
+        cache_query_vector: list[float] | None = None
+        if cache_eligible:
+            cache_query_vector, cached_answer = await self._check_semantic_cache(
+                conversation.user_id, history[-1].content
+            )
+            if cached_answer is not None:
+                yield {"event": "agent", "data": {"name": DEFAULT_AGENT, "label": get_agent(DEFAULT_AGENT).label}}
+                yield {"event": "token", "data": {"delta": cached_answer}}
+                with anyio.CancelScope(shield=True):
+                    assistant_message = await self.messages.create(
+                        conversation.id,
+                        role="assistant",
+                        content=cached_answer,
+                        model=conversation.model,
+                        finish_reason="stop",
+                        agent=DEFAULT_AGENT,
+                    )
+                    await self.conversations.touch(conversation)
+                    await self.db.commit()
+                yield {
+                    "event": "done",
+                    "data": {
+                        "message_id": str(assistant_message.id),
+                        "finish_reason": "stop",
+                        "usage": None,
+                        "citations": [],
+                    },
+                }
+                return
 
         effective_history, summary_text = await self._get_effective_history(conversation, history)
 
@@ -638,6 +716,11 @@ class ChatService:
         usage = None
         error_message: str | None = None
         turn_started = time.monotonic()
+        # 1 after a turn that never called a tool (call_model_node increments it once per pass -
+        # see tool_loop_graph.py); anything higher means at least one tool round-tripped. Used
+        # below to keep tool-derived answers (search results, gmail, calendar) out of the
+        # semantic cache, where they'd keep being replayed long after they went stale.
+        final_iteration = 0
         # generate_image already stores its bytes in S3 during the tool call itself (it has no
         # DB access - see image_generation.py) - this just accumulates what it reported so the
         # resulting MessageAttachment rows can be created once the assistant message they belong
@@ -682,6 +765,7 @@ class ChatService:
                     usage = chunk["usage"]
                     generated_attachments = chunk["generated_attachments"]
                     error_message = chunk["error_message"]
+                    final_iteration = chunk["iteration"]
         except ProviderError as exc:
             error_message = str(exc)
             finish_reason = "error"
@@ -763,6 +847,28 @@ class ChatService:
                     history[-1].content,
                     full_content,
                 )
+            )
+
+        # Fire-and-forget: store this exchange for future semantic-cache hits. Gated well beyond
+        # cache_eligible (which only governs whether a *lookup* was attempted) - also requires the
+        # classifier landed on "general" (a coding/writing/research/etc reply isn't the plain Q&A
+        # this cache is meant for), no document context was used (a RAG-augmented answer is
+        # specific to this user's current documents, not safe to replay once those change), and no
+        # tool round-tripped (search/gmail/calendar results go stale in ways a TTL alone can't
+        # detect per-answer). cache_query_vector is only set when the lookup itself ran and its
+        # embedding call succeeded - reused here so storing never needs a second embedding call.
+        if (
+            cache_eligible
+            and cache_query_vector is not None
+            and assistant_message
+            and finish_reason == "stop"
+            and full_content
+            and not citations
+            and final_iteration <= 1
+            and selected_agent == DEFAULT_AGENT
+        ):
+            asyncio.create_task(
+                self._store_semantic_cache(conversation.user_id, history[-1].content, full_content, cache_query_vector)
             )
 
         yield {
