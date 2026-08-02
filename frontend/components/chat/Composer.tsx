@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowUp, ChevronDown, ImagePlus, Mic, Square, X } from "lucide-react";
+import { ArrowUp, AudioLines, ChevronDown, ImagePlus, Mic, Square, X } from "lucide-react";
 import { useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
 
 import { Tooltip } from "@/components/ui/Tooltip";
@@ -33,6 +33,7 @@ export function Composer({
   disabled,
   mode,
   onModeChange,
+  onOpenVoiceMode,
 }: {
   onSend: (content: string, attachmentIds: string[], mode: ComposerMode) => void;
   onStop: () => void;
@@ -42,6 +43,9 @@ export function Composer({
   // has-messages branches), which would otherwise silently reset the selection to "auto" mid-use.
   mode: ComposerMode;
   onModeChange: (mode: ComposerMode) => void;
+  // Opens VoiceModeOverlay (owned by ChatWindow, not here - see that component's docstring for
+  // why voice mode is a separate, self-contained loop rather than living in this composer).
+  onOpenVoiceMode?: () => void;
 }) {
   const [value, setValue] = useState("");
   const [isModeMenuOpen, setIsModeMenuOpen] = useState(false);
@@ -329,6 +333,18 @@ export function Composer({
                 <Mic size={19} />
               </button>
             </Tooltip>
+            {onOpenVoiceMode && (
+              <Tooltip label="Voice mode">
+                <button
+                  onClick={onOpenVoiceMode}
+                  disabled={disabled}
+                  aria-label="Open voice mode"
+                  className="flex-shrink-0 rounded-full p-2 text-black/50 hover:bg-black/5 disabled:opacity-40 dark:text-white/50 dark:hover:bg-white/10"
+                >
+                  <AudioLines size={19} />
+                </button>
+              </Tooltip>
+            )}
             {disabled ? (
               <Tooltip label="Stop generating">
                 <button

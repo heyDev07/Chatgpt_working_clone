@@ -31,6 +31,7 @@ import { ConversationSettings } from "./ConversationSettings";
 import { MessageList } from "./MessageList";
 import { OrchestratorPlan } from "./OrchestratorPlan";
 import { ToolConfirmationPrompt } from "./ToolConfirmationPrompt";
+import { VoiceModeOverlay } from "./VoiceModeOverlay";
 
 export function ChatWindow({ conversationId }: { conversationId: string }) {
   const queryClient = useQueryClient();
@@ -71,6 +72,9 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
   // conversation transitions between them, which would silently reset any state Composer owned
   // itself back to its default the moment the first message started sending.
   const [composerMode, setComposerMode] = useState<ComposerMode>("auto");
+  // VoiceModeOverlay drives its own independent streamMessage() loop (see its docstring) -
+  // this is just the toggle that shows/hides it.
+  const [isVoiceModeOpen, setIsVoiceModeOpen] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
 
   // Batches SSE token deltas into one state update per animation frame instead of one per
@@ -449,6 +453,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
               disabled={isSending}
               mode={composerMode}
               onModeChange={setComposerMode}
+              onOpenVoiceMode={() => setIsVoiceModeOpen(true)}
             />
           </div>
           {error && (
@@ -498,11 +503,15 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
             disabled={isSending}
             mode={composerMode}
             onModeChange={setComposerMode}
+            onOpenVoiceMode={() => setIsVoiceModeOpen(true)}
           />
         </>
       )}
       {showSettings && conversation && (
         <ConversationSettings conversation={conversation} onClose={() => setShowSettings(false)} />
+      )}
+      {isVoiceModeOpen && (
+        <VoiceModeOverlay conversationId={conversationId} onClose={() => setIsVoiceModeOpen(false)} />
       )}
     </div>
   );
