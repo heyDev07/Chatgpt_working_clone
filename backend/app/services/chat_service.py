@@ -41,7 +41,7 @@ from app.tools.google_workspace import (
     SearchGmailTool,
     SendGmailTool,
 )
-from app.tools.job_application import TailorResumeTool, WriteCoverLetterTool
+from app.tools.job_application import SubmitJobApplicationTool, TailorResumeTool, WriteCoverLetterTool
 from app.tools.registry import build_playwright_tools, get_tool_registry
 from app.tools.reminders import CreateReminderTool
 from app.tools.router import ToolRouter
@@ -686,7 +686,19 @@ class ChatService:
             # design) - relevant now that the tool loop below runs as a LangGraph graph, whose
             # nodes execute via their own asyncio.create_task() calls.
             await browser_session.open()
-            tool_registry = tool_registry.child_with(build_playwright_tools(browser_session))
+            extra_browser_tools: list = build_playwright_tools(browser_session)
+            if selected_agent == "job_application":
+                # Only merged for this persona, not "browser" - its allowed_tools already
+                # wouldn't offer submit_job_application to the "browser" persona either, but
+                # constructing it there too would be pointless dead weight.
+                extra_browser_tools = [
+                    *extra_browser_tools,
+                    SubmitJobApplicationTool(
+                        conversation.user_id, browser_session, self.provider_manager, conversation.provider,
+                        conversation.model,
+                    ),
+                ]
+            tool_registry = tool_registry.child_with(extra_browser_tools)
         tool_router = ToolRouter(self.db, tool_registry)
         tool_schemas = tool_registry.list_openai_tool_schemas(allowed=agent_def.allowed_tools) or None
 

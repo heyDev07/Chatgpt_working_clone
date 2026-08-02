@@ -33,3 +33,8 @@ tool_call_rate_limiter = RateLimiter(key_prefix="tool_call", max_requests=30, wi
 # Document parsing/embedding and image storage both cost real compute/storage - same reasoning
 # as tool calls above.
 upload_rate_limiter = RateLimiter(key_prefix="upload", max_requests=20, window_seconds=60)
+# A confirmation gate alone doesn't cap how many real applications get submitted - it only
+# guarantees each one was approved, not that approving many in a row was a good idea. This is an
+# independent backstop against rapid-fire submission (accidental or otherwise), not a substitute
+# for the confirmation step.
+job_application_rate_limiter = RateLimiter(key_prefix="job_application", max_requests=10, window_seconds=86400)
