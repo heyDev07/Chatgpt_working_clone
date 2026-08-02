@@ -5,18 +5,20 @@ import { Check, Loader2 } from "lucide-react";
 import { agentLabel } from "@/lib/agents";
 import type { PlanEventData } from "@/lib/api/stream";
 
-// Shown once decomposition completes (see orchestrator_service.py's "plan" event) so the user
-// sees the whole multi-step breakdown upfront, not just whichever subtask happens to be running -
-// activeAgent (already wired into MessageBubble) still shows which *one* is live right now via
-// the highlighted row below, same underlying state, just a different view of it.
-export function OrchestratorPlan({ plan, activeAgent }: { plan: PlanEventData; activeAgent: string | null }) {
-  const activeIndex = plan.steps.findIndex((s) => s.agent === activeAgent);
-
+// Shown once decomposition completes (see orchestrator_service.py's/research_service.py's "plan"
+// event) so the user sees the whole multi-step breakdown upfront, not just whichever subtask
+// happens to be running. activeStepIndex counts "agent" events received since this plan started
+// (see ChatWindow.tsx's agentEventCount) rather than matching by agent *name* - the orchestrator's
+// steps have distinct specialist names, but research_service.py's steps all share the same
+// "deep_research" persona for different sub-questions, so name-matching would always resolve to
+// the first step. Position-in-arrival-order is correct for both, since each service emits exactly
+// one "agent" event per step, in order.
+export function OrchestratorPlan({ plan, activeStepIndex }: { plan: PlanEventData; activeStepIndex: number }) {
   return (
     <div className="flex flex-col gap-1 rounded-lg border border-black/10 dark:border-white/10 px-3 py-2 text-xs">
       {plan.steps.map((step, i) => {
-        const isDone = activeIndex >= 0 && i < activeIndex;
-        const isActive = i === activeIndex;
+        const isDone = activeStepIndex >= 0 && i < activeStepIndex;
+        const isActive = i === activeStepIndex;
         return (
           <div key={i} className="flex items-center gap-2">
             {isDone ? (

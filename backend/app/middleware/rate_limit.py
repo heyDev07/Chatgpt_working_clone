@@ -38,3 +38,7 @@ upload_rate_limiter = RateLimiter(key_prefix="upload", max_requests=20, window_s
 # independent backstop against rapid-fire submission (accidental or otherwise), not a substitute
 # for the confirmation step.
 job_application_rate_limiter = RateLimiter(key_prefix="job_application", max_requests=10, window_seconds=86400)
+# Deep Research is a multi-call, multi-search pipeline per turn - far more expensive than a
+# normal message even before counting web-search cost, so it gets its own cap independent of
+# message_rate_limiter's general per-minute one.
+research_rate_limiter = RateLimiter(key_prefix="research", max_requests=10, window_seconds=3600)

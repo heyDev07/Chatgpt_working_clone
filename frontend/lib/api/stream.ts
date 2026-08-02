@@ -171,3 +171,22 @@ export function orchestrateMessage(
     signal
   );
 }
+
+// Explicit "Deep Research" mode - decomposes into research sub-questions (not specialists,
+// unlike orchestrateMessage above), researches each sequentially with real web search/extraction,
+// and synthesizes one long cited report - see research_service.py's docstring. Same event
+// vocabulary as orchestrateMessage (a "plan" event first, then token/tool_call/tool_result/agent
+// per sub-question), so no new callback types are needed here.
+export function researchMessage(
+  conversationId: string,
+  content: string,
+  callbacks: StreamCallbacks,
+  signal: AbortSignal
+): Promise<void> {
+  return consumeStream(
+    `${API_BASE_URL}/conversations/${conversationId}/research`,
+    JSON.stringify({ content }),
+    callbacks,
+    signal
+  );
+}

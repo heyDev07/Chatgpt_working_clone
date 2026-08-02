@@ -18,6 +18,7 @@ const MODE_PLACEHOLDERS: Record<ComposerMode, string> = {
   search: "Search the web...",
   agent: "Describe a multi-part request...",
   job_application: "What job are you looking for?",
+  research: "What do you want researched?",
 };
 
 interface PendingAttachment {

@@ -15,6 +15,7 @@ import {
   editMessage,
   orchestrateMessage,
   regenerateMessage,
+  researchMessage,
   searchMessage,
   streamMessage,
   type AgentEventData,
@@ -52,8 +53,16 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
   // separate request rather than something this stream connection can answer itself.
   const [pendingConfirmation, setPendingConfirmation] = useState<ToolConfirmationEventData | null>(null);
   const [isResolvingConfirmation, setIsResolvingConfirmation] = useState(false);
-  // Only ever set for mode==="agent" turns (orchestrateMessage) - see OrchestratorPlan.tsx.
+  // Only ever set for mode==="agent"/"research" turns (orchestrateMessage/researchMessage) -
+  // see OrchestratorPlan.tsx.
   const [plan, setPlan] = useState<PlanEventData | null>(null);
+  // Counts "agent" events since the current plan started, used as the active step index -
+  // orchestrator steps have distinct agent names (findIndex by name would've worked), but
+  // research_service.py's steps all share the same "deep_research" name (different sub-questions,
+  // same persona), so position-in-arrival-order is the only thing that reliably identifies which
+  // step is live. Both services emit exactly one "agent" event per step in order, so this stays
+  // correct for either case.
+  const [agentEventCount, setAgentEventCount] = useState(0);
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
@@ -95,7 +104,10 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
     }
   };
 
-  const handleAgent = (event: AgentEventData) => setActiveAgent(event.name);
+  const handleAgent = (event: AgentEventData) => {
+    setActiveAgent(event.name);
+    setAgentEventCount((count) => count + 1);
+  };
 
   const handleToolCall = (event: ToolCallEventData) => {
     setToolActivity((prev) => [
@@ -116,7 +128,10 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
 
   const handleToolConfirmationRequired = (event: ToolConfirmationEventData) => setPendingConfirmation(event);
 
-  const handlePlan = (event: PlanEventData) => setPlan(event);
+  const handlePlan = (event: PlanEventData) => {
+    setPlan(event);
+    setAgentEventCount(0);
+  };
 
   const resolveConfirmation = async (approved: boolean) => {
     if (!pendingConfirmation) return;
@@ -238,16 +253,20 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
       },
     };
 
-    // "search" and "agent" are completely different endpoints (search never touches the LLM,
-    // see chat_service.py's stream_search; agent decomposes into subtasks, see
-    // orchestrator_service.py) - everything else goes through the normal message endpoint, with
-    // "auto" leaving the agent field unset so classify_agent() picks as before.
+    // "search", "agent", and "research" are completely different endpoints (search never
+    // touches the LLM, see chat_service.py's stream_search; agent decomposes into specialist
+    // subtasks, see orchestrator_service.py; research decomposes into research sub-questions and
+    // produces a cited report, see research_service.py) - everything else goes through the
+    // normal message endpoint, with "auto" leaving the agent field unset so classify_agent()
+    // picks as before.
     runStream((signal) =>
       mode === "search"
         ? searchMessage(conversationId, content, callbacks, signal)
         : mode === "agent"
           ? orchestrateMessage(conversationId, content, callbacks, signal)
-          : streamMessage(conversationId, content, callbacks, signal, attachmentIds, mode === "auto" ? undefined : mode)
+          : mode === "research"
+            ? researchMessage(conversationId, content, callbacks, signal)
+            : streamMessage(conversationId, content, callbacks, signal, attachmentIds, mode === "auto" ? undefined : mode)
     );
   };
 
@@ -462,7 +481,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
           )}
           {plan && streamingContent !== null && (
             <div className="mx-auto max-w-3xl w-full px-4 pb-1">
-              <OrchestratorPlan plan={plan} activeAgent={activeAgent} />
+              <OrchestratorPlan plan={plan} activeStepIndex={agentEventCount - 1} />
             </div>
           )}
           {pendingConfirmation && (

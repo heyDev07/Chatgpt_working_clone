@@ -9,13 +9,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db, get_provider_manager, get_redis
 from app.db.database import async_session_factory
-from app.middleware.rate_limit import message_rate_limiter
+from app.middleware.rate_limit import message_rate_limiter, research_rate_limiter
 from app.models.user import User
 from app.providers.provider_manager import ProviderManager
 from app.schemas.message import MessageCreate, MessageFeedbackUpdate, MessageOut, ToolConfirmationRequest
 from app.services import tool_confirmation
 from app.services.chat_service import ChatService
 from app.services.orchestrator_service import stream_orchestrated
+from app.services.research_service import stream_research
 
 router = APIRouter(prefix="/conversations", tags=["messages"])
 
@@ -107,6 +108,36 @@ async def orchestrate_message(
     async def event_stream() -> AsyncIterator[str]:
         async with async_session_factory() as stream_db:
             async for event in stream_orchestrated(
+                stream_db, provider_manager, conversation_id, current_user.id, payload.content
+            ):
+                yield _format_sse(event["event"], event["data"])
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@router.post("/{conversation_id}/research")
+async def research_message(
+    conversation_id: uuid.UUID,
+    payload: MessageCreate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    provider_manager: ProviderManager = Depends(get_provider_manager),
+    redis: Redis = Depends(get_redis),
+) -> StreamingResponse:
+    # Explicit "Deep Research" composer mode - see research_service.py's module docstring for why
+    # this is its own pipeline rather than a job for classify_agent()'s single-agent routing or
+    # the general orchestrator to pick up.
+    await research_rate_limiter.check(redis, identifier=str(current_user.id))
+
+    await ChatService(db, provider_manager).get_authorized_conversation(conversation_id, current_user.id)
+
+    async def event_stream() -> AsyncIterator[str]:
+        async with async_session_factory() as stream_db:
+            async for event in stream_research(
                 stream_db, provider_manager, conversation_id, current_user.id, payload.content
             ):
                 yield _format_sse(event["event"], event["data"])

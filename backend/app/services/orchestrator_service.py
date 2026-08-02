@@ -29,7 +29,7 @@ import logging
 import uuid
 from collections.abc import AsyncIterator
 
-from app.agents.definitions import AGENTS, DEFAULT_AGENT, get_agent
+from app.agents.definitions import AGENTS, AgentDefinition, DEFAULT_AGENT, get_agent
 from app.db.database import async_session_factory
 from app.models.conversation import Conversation
 from app.providers.base_provider import ChatMessage
@@ -87,12 +87,18 @@ def _parse_steps(raw: str) -> list[dict[str, str]]:
     return steps
 
 
-async def _run_subtask(provider_manager: ProviderManager, conversation: Conversation, agent_name: str, task: str) -> AsyncIterator[dict]:
+async def _run_subtask(
+    provider_manager: ProviderManager, conversation: Conversation, agent_def: AgentDefinition, task: str
+) -> AsyncIterator[dict]:
     """Runs one subtask through the same TOOL_LOOP_GRAPH every other mode uses, yielding its
     token/tool_call/tool_result events live (so the user sees real progress per subtask, not a
     silent wait) and finally an internal-only 'subtask_result' the caller collects and strips
-    before anything reaches the client - see stream_orchestrated below."""
-    agent_def = get_agent(agent_name)
+    before anything reaches the client - see stream_orchestrated below.
+
+    Takes an already-resolved AgentDefinition rather than a name to look up via get_agent() - the
+    caller here already has one on hand (see stream_orchestrated's loop), and research_service.py
+    reuses this same function with a persona that's deliberately *not* in the global AGENTS
+    registry (see its module docstring), so get_agent() couldn't resolve it by name anyway."""
     provider = provider_manager.get_provider(conversation.provider)
 
     async with async_session_factory() as db:
@@ -134,7 +140,7 @@ async def _run_subtask(provider_manager: ProviderManager, conversation: Conversa
             else:
                 full_content = chunk["full_content"]
 
-    yield {"event": "subtask_result", "data": {"agent": agent_name, "task": task, "result": full_content}}
+    yield {"event": "subtask_result", "data": {"agent": agent_def.name, "task": task, "result": full_content}}
 
 
 async def stream_orchestrated(
@@ -189,7 +195,7 @@ async def stream_orchestrated(
     for step in steps:
         agent_def = get_agent(step["agent"])
         yield {"event": "agent", "data": {"name": agent_def.name, "label": agent_def.label}}
-        async for event in _run_subtask(provider_manager, conversation, step["agent"], step["task"]):
+        async for event in _run_subtask(provider_manager, conversation, agent_def, step["task"]):
             if event["event"] == "subtask_result":
                 sub_results.append(event["data"])
             else:
