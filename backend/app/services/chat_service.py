@@ -816,6 +816,7 @@ class ChatService:
                         finish_reason=finish_reason,
                         token_count=usage.completion_tokens if usage else None,
                         agent=selected_agent,
+                        citations=citations or None,
                     )
                     for generated in generated_attachments:
                         storage_key = generated.get("storage_key")

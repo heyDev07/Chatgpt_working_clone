@@ -8,6 +8,7 @@ import { isSpeechSynthesisSupported, speakText, stopSpeaking } from "@/lib/speec
 import type { Message } from "@/lib/types";
 
 import { AttachmentImage } from "./AttachmentImage";
+import { CitationList } from "./CitationList";
 import { MarkdownContent } from "./MarkdownContent";
 import { SearchSources } from "./SearchSources";
 import { StreamingCursor } from "./StreamingCursor";
@@ -182,6 +183,7 @@ export function MessageBubble({
           {isStreaming && <StreamingCursor />}
         </div>
         {message.agent === "web_search" && <SearchSources content={message.content} />}
+        {!isStreaming && <CitationList citations={message.citations} />}
         {message.attachments && message.attachments.length > 0 && (
           <div className="mt-2 flex flex-wrap gap-2">
             {message.attachments.map((a) => (

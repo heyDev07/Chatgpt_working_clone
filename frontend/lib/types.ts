@@ -47,6 +47,12 @@ export interface Attachment {
   created_at: string;
 }
 
+// Deliberately loose, not a single fixed shape - RAG document citations are
+// {filename,document_id,score}, Deep Research's web citations are {title,url,snippet}. Both
+// are genuinely different sources rendered by the same CitationList component, which branches
+// on which fields are actually present rather than needing a shared schema.
+export type Citation = Record<string, unknown>;
+
 export interface Message {
   id: string;
   conversation_id: string;
@@ -57,6 +63,7 @@ export interface Message {
   finish_reason: string | null;
   feedback?: "up" | "down" | null;
   agent?: string | null;
+  citations?: Citation[] | null;
   attachments?: Attachment[];
   created_at: string;
 }

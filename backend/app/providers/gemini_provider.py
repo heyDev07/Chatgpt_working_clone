@@ -1,8 +1,11 @@
+import asyncio
 import json
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
+from typing import TypeVar
 
 from google import genai
+from google.genai import errors as genai_errors
 from google.genai import types
 
 from app.core.exceptions import ProviderError
@@ -141,6 +144,32 @@ def _usage_from_metadata(usage_metadata: types.GenerateContentResponseUsageMetad
     )
 
 
+_T = TypeVar("_T")
+
+# The google-genai SDK, unlike the openai SDK, has no documented built-in retry-on-429 behavior -
+# confirmed by inspecting its errors module rather than assumed. This fills that gap explicitly:
+# a 429 surfaces as ClientError with .code == 429, retried with exponential backoff up to this
+# many attempts. Only wraps the call that kicks off a request, not iteration over an already-open
+# stream (see stream() below) - mirrors the same split OpenAIProvider.stream already has between
+# its outer try/except (the initial call) and its inner one (the streamed iteration).
+_MAX_RATE_LIMIT_ATTEMPTS = 5
+
+
+async def _call_with_retry(factory: Callable[[], Awaitable[_T]]) -> _T:
+    last_exc: genai_errors.ClientError | None = None
+    for attempt in range(_MAX_RATE_LIMIT_ATTEMPTS):
+        try:
+            return await factory()
+        except genai_errors.ClientError as exc:
+            if exc.code != 429:
+                raise
+            last_exc = exc
+            if attempt < _MAX_RATE_LIMIT_ATTEMPTS - 1:
+                await asyncio.sleep(2**attempt)
+    assert last_exc is not None
+    raise last_exc
+
+
 class GeminiProvider(BaseProvider):
     name = "gemini"
 
@@ -156,8 +185,8 @@ class GeminiProvider(BaseProvider):
         )
 
         try:
-            response = await self._client.aio.models.generate_content(
-                model=model, contents=turns, config=config
+            response = await _call_with_retry(
+                lambda: self._client.aio.models.generate_content(model=model, contents=turns, config=config)
             )
         except Exception as exc:
             raise ProviderError(f"Gemini generate failed: {exc}") from exc
@@ -180,8 +209,8 @@ class GeminiProvider(BaseProvider):
         )
 
         try:
-            response_stream = await self._client.aio.models.generate_content_stream(
-                model=model, contents=turns, config=config
+            response_stream = await _call_with_retry(
+                lambda: self._client.aio.models.generate_content_stream(model=model, contents=turns, config=config)
             )
         except Exception as exc:
             raise ProviderError(f"Gemini stream failed: {exc}") from exc
@@ -239,8 +268,8 @@ class GeminiProvider(BaseProvider):
     async def embed_texts(self, texts: list[str], model: str, **kwargs) -> list[list[float]]:
         config = types.EmbedContentConfig(**_translate_kwargs(kwargs)) if kwargs else None
         try:
-            response = await self._client.aio.models.embed_content(
-                model=model, contents=texts, config=config
+            response = await _call_with_retry(
+                lambda: self._client.aio.models.embed_content(model=model, contents=texts, config=config)
             )
         except Exception as exc:
             raise ProviderError(f"Gemini embed_texts failed: {exc}") from exc

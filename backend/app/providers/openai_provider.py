@@ -60,7 +60,12 @@ class OpenAIProvider(BaseProvider):
     name = "openai"
 
     def __init__(self, api_key: str, base_url: str | None = None):
-        self._client = AsyncOpenAI(api_key=api_key, base_url=base_url or None)
+        # Bumped from the SDK's default of 2 - the "openai" provider slot is routed through
+        # OpenRouter's free tier for testing (see settings.py), which is exactly the client most
+        # likely to hit a 429. The SDK already does Retry-After-aware exponential backoff for
+        # 429/5xx/connection errors internally before ever raising - this widens that budget
+        # rather than reimplementing it.
+        self._client = AsyncOpenAI(api_key=api_key, base_url=base_url or None, max_retries=5)
 
     async def generate(
         self, messages: list[ChatMessage], model: str, tools: list[dict] | None = None, **kwargs

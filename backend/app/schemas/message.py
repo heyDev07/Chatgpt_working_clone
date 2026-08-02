@@ -50,5 +50,6 @@ class MessageOut(BaseModel):
     finish_reason: str | None
     feedback: str | None
     agent: str | None
+    citations: list[dict] | None = None
     attachments: list[AttachmentOut] = Field(default_factory=list)
     created_at: datetime

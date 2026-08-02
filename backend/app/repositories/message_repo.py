@@ -21,6 +21,7 @@ class MessageRepository:
         token_count: int | None = None,
         finish_reason: str | None = None,
         agent: str | None = None,
+        citations: list[dict] | None = None,
     ) -> Message:
         message = Message(
             conversation_id=conversation_id,
@@ -30,6 +31,7 @@ class MessageRepository:
             token_count=token_count,
             finish_reason=finish_reason,
             agent=agent,
+            citations=citations,
         )
         self.db.add(message)
         await self.db.flush()
