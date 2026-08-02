@@ -14,5 +14,6 @@ class DocumentOut(BaseModel):
     status: str
     chunk_count: int | None
     error_message: str | None
+    is_resume: bool
     created_at: datetime
     updated_at: datetime

@@ -1,8 +1,9 @@
 import uuid
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.exceptions import NotFoundError
 from app.models.document import Document
 
 
@@ -60,3 +61,25 @@ class DocumentRepository:
     async def delete(self, document: Document) -> None:
         await self.db.delete(document)
         await self.db.flush()
+
+    async def get_resume_for_user(self, user_id: uuid.UUID) -> Document | None:
+        result = await self.db.execute(
+            select(Document).where(Document.user_id == user_id, Document.is_resume.is_(True))
+        )
+        return result.scalar_one_or_none()
+
+    async def set_resume(self, user_id: uuid.UUID, document_id: uuid.UUID) -> Document:
+        """Marks one document as the user's active resume, atomically un-marking any previous
+        one - at most one resume per user is a real invariant (get_resume_text has nowhere to
+        send an ambiguous "which one" question), enforced here rather than a DB constraint since
+        this is the only call site that ever changes is_resume."""
+        document = await self.get_for_user(document_id, user_id)
+        if document is None:
+            raise NotFoundError("Document not found")
+        await self.db.execute(
+            update(Document).where(Document.user_id == user_id, Document.id != document_id).values(is_resume=False)
+        )
+        document.is_resume = True
+        await self.db.flush()
+        await self.db.refresh(document)
+        return document

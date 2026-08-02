@@ -58,3 +58,12 @@ async def delete_document(
     service: DocumentService = Depends(_get_service),
 ):
     await service.delete(document_id, current_user.id)
+
+
+@router.post("/{document_id}/set-resume", response_model=DocumentOut)
+async def set_resume(
+    document_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    service: DocumentService = Depends(_get_service),
+):
+    return await service.set_resume(document_id, current_user.id)

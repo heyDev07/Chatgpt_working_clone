@@ -41,6 +41,7 @@ from app.tools.google_workspace import (
     SearchGmailTool,
     SendGmailTool,
 )
+from app.tools.job_application import TailorResumeTool, WriteCoverLetterTool
 from app.tools.registry import build_playwright_tools, get_tool_registry
 from app.tools.reminders import CreateReminderTool
 from app.tools.router import ToolRouter
@@ -668,10 +669,14 @@ class ChatService:
                 ListCalendarEventsTool(conversation.user_id),
                 SendGmailTool(conversation.user_id),
                 CreateCalendarEventTool(conversation.user_id),
+                TailorResumeTool(conversation.user_id, self.provider_manager, conversation.provider, conversation.model),
+                WriteCoverLetterTool(
+                    conversation.user_id, self.provider_manager, conversation.provider, conversation.model
+                ),
             ]
         )
         browser_session: PlaywrightBrowserSession | None = None
-        if selected_agent == "browser":
+        if selected_agent == "browser" or selected_agent == "job_application":
             browser_session = PlaywrightBrowserSession()
             # Eagerly opened here rather than lazily on first tool call, so a browser-persona
             # turn that never actually calls a browser_* tool still fails fast on a broken

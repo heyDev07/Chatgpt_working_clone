@@ -1,16 +1,18 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertCircle, CheckCircle2, Loader2, Trash2, Upload, X } from "lucide-react";
+import { AlertCircle, CheckCircle2, Loader2, Star, Trash2, Upload, X } from "lucide-react";
 import { useRef, useState, type ChangeEvent } from "react";
 
 import {
   deleteDocument,
   listDocuments,
+  setResumeDocument,
   uploadDocument,
   type DocumentItem,
 } from "@/lib/api/documents";
 import { ApiError } from "@/lib/api/client";
+import { Tooltip } from "@/components/ui/Tooltip";
 
 const ACCEPTED_EXTENSIONS = ".pdf,.docx,.txt,.csv,.xlsx";
 
@@ -56,6 +58,14 @@ function DocumentRow({ document }: { document: DocumentItem }) {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["documents"] }),
   });
 
+  // Marking a resume unsets any previous one server-side (at most one per user - see
+  // DocumentRepository.set_resume), so refetching the whole list rather than patching one row
+  // locally keeps every row's badge correct with a single source of truth.
+  const { mutate: markResume, isPending: isMarking } = useMutation({
+    mutationFn: () => setResumeDocument(document.id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["documents"] }),
+  });
+
   return (
     <div className="group flex items-center justify-between gap-3 rounded-lg border border-black/10 dark:border-white/10 px-3 py-2.5">
       <div className="flex-1 min-w-0">
@@ -63,16 +73,35 @@ function DocumentRow({ document }: { document: DocumentItem }) {
         <div className="mt-0.5 flex items-center gap-2">
           <span className="text-xs text-black/40 dark:text-white/40">{formatSize(document.size_bytes)}</span>
           <StatusBadge document={document} />
+          {document.is_resume && (
+            <span className="rounded-full bg-black/5 px-1.5 py-0.5 text-[10px] text-black/50 dark:bg-white/10 dark:text-white/50">
+              Resume
+            </span>
+          )}
         </div>
       </div>
-      <button
-        onClick={() => remove()}
-        disabled={isDeleting}
-        aria-label="Delete document"
-        className="flex-shrink-0 text-black/40 hover:text-red-500 dark:text-white/40 opacity-0 group-hover:opacity-100 disabled:opacity-40"
-      >
-        <Trash2 size={14} />
-      </button>
+      <div className="flex flex-shrink-0 items-center gap-2 opacity-0 group-hover:opacity-100">
+        {!document.is_resume && document.status === "ready" && (
+          <Tooltip label="Mark as my resume">
+            <button
+              onClick={() => markResume()}
+              disabled={isMarking}
+              aria-label="Mark as my resume"
+              className="text-black/40 hover:text-black dark:text-white/40 dark:hover:text-white disabled:opacity-40"
+            >
+              <Star size={14} />
+            </button>
+          </Tooltip>
+        )}
+        <button
+          onClick={() => remove()}
+          disabled={isDeleting}
+          aria-label="Delete document"
+          className="text-black/40 hover:text-red-500 dark:text-white/40 disabled:opacity-40"
+        >
+          <Trash2 size={14} />
+        </button>
+      </div>
     </div>
   );
 }

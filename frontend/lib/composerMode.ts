@@ -6,7 +6,7 @@
 // the request into subtasks across multiple specialist personas and synthesizes one final
 // answer, for compound requests a single persona can't cleanly cover (see
 // orchestrator_service.py's docstring).
-export type ComposerMode = "auto" | "coding" | "writing" | "search" | "agent";
+export type ComposerMode = "auto" | "coding" | "writing" | "search" | "agent" | "job_application";
 
 export const COMPOSER_MODES: { value: ComposerMode; label: string; description: string }[] = [
   { value: "auto", label: "Auto", description: "The assistant picks the right approach for you" },
@@ -14,4 +14,5 @@ export const COMPOSER_MODES: { value: ComposerMode; label: string; description: 
   { value: "writing", label: "Write", description: "Crafted, literary prose" },
   { value: "search", label: "Search", description: "Direct web search, no AI model involved" },
   { value: "agent", label: "Agent", description: "Breaks compound requests into specialist subtasks" },
+  { value: "job_application", label: "Job Assistant", description: "Find postings, tailor your resume, and apply" },
 ];

@@ -8,8 +8,9 @@ from app.core.exceptions import NotFoundError, StorageError, ValidationAppError
 from app.models.document import Document
 from app.providers.provider_manager import ProviderManager
 from app.repositories.document_repo import DocumentRepository
+from app.services.document_parsing import extract_text
 from app.services.document_processing import run_document_processing
-from app.storage.s3_client import delete_object, safe_storage_filename, upload_bytes
+from app.storage.s3_client import delete_object, download_bytes, safe_storage_filename, upload_bytes
 from app.vectorstore.qdrant_client import delete_document_chunks
 
 ALLOWED_CONTENT_TYPES = {
@@ -87,3 +88,22 @@ class DocumentService:
             pass  # best-effort: vector store may not have been populated yet (e.g. still processing)
         await self.documents.delete(document)
         await self.db.commit()
+
+    async def set_resume(self, document_id: uuid.UUID, user_id: uuid.UUID) -> Document:
+        document = await self.documents.set_resume(user_id, document_id)
+        await self.db.commit()
+        return document
+
+
+async def get_resume_text(db: AsyncSession, user_id: uuid.UUID) -> str | None:
+    """Re-derives the full text of the user's marked resume on demand, the same way as the first
+    two steps of run_document_processing() - full extracted text is never persisted anywhere
+    (chunking discards it, and Qdrant's chunks have overlapping text stitched in so concatenating
+    them back isn't a clean reconstruction). Returns None if no document is marked as the resume,
+    letting callers (job_application tools) turn that into a clear "ask the user to upload and
+    mark one first" message rather than guessing."""
+    document = await DocumentRepository(db).get_resume_for_user(user_id)
+    if document is None:
+        return None
+    data = await download_bytes(document.storage_key)
+    return extract_text(document.content_type, data)

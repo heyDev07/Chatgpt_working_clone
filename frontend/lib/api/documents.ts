@@ -8,6 +8,7 @@ export interface DocumentItem {
   status: "pending" | "processing" | "ready" | "failed";
   chunk_count: number | null;
   error_message: string | null;
+  is_resume: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -31,4 +32,8 @@ export function uploadDocument(file: File): Promise<DocumentItem> {
 
 export function deleteDocument(id: string): Promise<void> {
   return apiFetch<void>(`/documents/${id}`, { method: "DELETE" });
+}
+
+export function setResumeDocument(id: string): Promise<DocumentItem> {
+  return apiFetch<DocumentItem>(`/documents/${id}/set-resume`, { method: "POST" });
 }

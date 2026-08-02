@@ -96,6 +96,41 @@ AGENTS: dict[str, AgentDefinition] = {
         # exposing browser_* tool names that don't exist yet.
         allowed_tools=frozenset(),
     ),
+    "job_application": AgentDefinition(
+        name="job_application",
+        label="Job Assistant",
+        description="Finding job openings, tailoring a resume or writing a cover letter for a specific posting, or applying to a job.",
+        system_prompt=(
+            "You help the user find and apply to jobs. Use tavily_search to find real, "
+            "currently-open postings with a direct application link - prefer official company "
+            "career pages or major job boards over aggregator pages with stale listings. Before "
+            "acting on a specific posting, use browser_navigate then browser_snapshot to read the "
+            "actual page - don't guess at a posting's requirements from a search snippet alone. "
+            "Use tailor_resume and write_cover_letter to prepare materials grounded in the user's "
+            "real, uploaded resume. Always tell the user which job you're about to apply to, and "
+            "what you're about to submit, before calling submit_job_application - the approval "
+            "prompt they'll see shouldn't be their first look at it. You only ever have "
+            "browser_navigate and browser_snapshot for looking at pages - you cannot click or "
+            "type on a page directly; submit_job_application is the only way to actually apply."
+        ),
+        # Deliberately a fixed, narrow set - NOT every browser_* tool discovered at startup like
+        # the "browser" persona gets (see set_browser_agent_tools below). Excluding
+        # browser_click/browser_type/browser_fill_form here is the actual safety boundary: it
+        # means the model can look at a job posting but the only way it can ever submit one is
+        # through submit_job_application, a single permission_level="restricted" tool gated by
+        # the human-in-the-loop confirmation flow - never through several small, unconfirmed
+        # generic browser actions that add up to the same effect.
+        allowed_tools=frozenset(
+            {
+                "tavily_search",
+                "tailor_resume",
+                "write_cover_letter",
+                "browser_navigate",
+                "browser_snapshot",
+                "submit_job_application",
+            }
+        ),
+    ),
 }
 
 
