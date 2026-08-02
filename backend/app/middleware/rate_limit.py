@@ -42,3 +42,6 @@ job_application_rate_limiter = RateLimiter(key_prefix="job_application", max_req
 # normal message even before counting web-search cost, so it gets its own cap independent of
 # message_rate_limiter's general per-minute one.
 research_rate_limiter = RateLimiter(key_prefix="research", max_requests=10, window_seconds=3600)
+# Voice mode makes one TTS call per *sentence*, not per turn - a higher ceiling than the other
+# expensive-capability limiters above, but still a real cap independent of message_rate_limiter.
+tts_rate_limiter = RateLimiter(key_prefix="tts", max_requests=60, window_seconds=3600)

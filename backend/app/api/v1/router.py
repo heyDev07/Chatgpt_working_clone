@@ -17,6 +17,7 @@ from app.api.v1 import (
     shared,
     tags,
     tools,
+    tts,
 )
 
 api_router = APIRouter()
@@ -36,3 +37,4 @@ api_router.include_router(linkedin_oauth.router)
 api_router.include_router(push.router)
 api_router.include_router(shared.router)
 api_router.include_router(admin.router)
+api_router.include_router(tts.router)
