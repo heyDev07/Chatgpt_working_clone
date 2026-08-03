@@ -10,7 +10,12 @@ import { confirmToolCall, setMessageFeedback, stopGeneration } from "@/lib/api/m
 import { useAuth } from "@/lib/auth/AuthContext";
 import type { ComposerMode } from "@/lib/composerMode";
 import { greetingText } from "@/lib/greeting";
-import { PENDING_FIRST_MESSAGE_KEY, type PendingFirstMessage } from "@/lib/pendingFirstMessage";
+import {
+  PENDING_FIRST_MESSAGE_KEY,
+  PENDING_VOICE_MODE_KEY,
+  type PendingFirstMessage,
+  type PendingVoiceMode,
+} from "@/lib/pendingFirstMessage";
 import {
   editMessage,
   orchestrateMessage,
@@ -301,6 +306,24 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
       sessionStorage.removeItem(PENDING_FIRST_MESSAGE_KEY);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- fires once per conversationId; handleSend is a fresh closure every render, not a meaningful dependency here
+  }, [conversationId]);
+
+  // Same handoff pattern as the pending-first-message effect above, for the landing page's voice
+  // mode button - it has no conversation to open the overlay against until one exists, so it
+  // creates one, stashes the id, and navigates here; this picks it up once on arrival.
+  useEffect(() => {
+    const raw = sessionStorage.getItem(PENDING_VOICE_MODE_KEY);
+    if (!raw) return;
+    try {
+      const pending = JSON.parse(raw) as PendingVoiceMode;
+      if (pending.conversationId === conversationId) {
+        sessionStorage.removeItem(PENDING_VOICE_MODE_KEY);
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- genuine one-time sync from sessionStorage, not a cascading-render anti-pattern
+        setIsVoiceModeOpen(true);
+      }
+    } catch {
+      sessionStorage.removeItem(PENDING_VOICE_MODE_KEY);
+    }
   }, [conversationId]);
 
   const handleRegenerate = () => {

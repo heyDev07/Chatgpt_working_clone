@@ -28,6 +28,12 @@ export function VoiceModeOverlay({ conversationId, onClose }: { conversationId: 
   const [phase, setPhase] = useState<Phase>("listening");
   const [interimTranscript, setInterimTranscript] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  // Only ever set on the local-Whisper fallback path (no native SpeechRecognition, or Brave's
+  // broken recognition service) - that path has real multi-second waits (first-use model
+  // download, then per-segment transcription) with nothing else visible for it, which reads as
+  // total silence without this. Null on the native path, where status changes are fast enough
+  // that `phase` alone already communicates what's happening.
+  const [fallbackStatus, setFallbackStatus] = useState<string | null>(null);
 
   const listenHandleRef = useRef<ContinuousListenHandle | null>(null);
   const speechQueueRef = useRef<SpeechQueue | null>(null);
@@ -58,6 +64,7 @@ export function VoiceModeOverlay({ conversationId, onClose }: { conversationId: 
 
   const handleFinalTranscript = (transcript: string) => {
     setInterimTranscript("");
+    setFallbackStatus(null);
     // Speaking over the assistant mid-reply is an interruption: tear down whatever's in flight
     // before starting the new turn. stop()/abort() run synchronously here, then setPhase("thinking")
     // runs right after in the same handler - with React 18's batching, that's the value that wins
@@ -108,26 +115,33 @@ export function VoiceModeOverlay({ conversationId, onClose }: { conversationId: 
   };
 
   useEffect(() => {
-    const handle = startContinuousRecognition(
-      handleFinalTranscript,
-      setInterimTranscript,
-      // No native SpeechRecognition at all (Firefox, Safari) - fall back to the same on-device
-      // Whisper path the existing dictation button uses, wrapped in basic silence-based
-      // segmenting so it can approximate continuous listening too (see voiceMode.ts).
-      () => {
-        listenHandleRef.current = startContinuousLocalListening(handleFinalTranscript, (message) =>
-          setErrorMessage(`Voice input failed: ${message}`)
-        );
-      },
-      (error) => {
-        if (error === "network" || error === "service-not-allowed") {
-          listenHandleRef.current = startContinuousLocalListening(handleFinalTranscript, (message) =>
-            setErrorMessage(`Voice input failed: ${message}`)
-          );
-        } else {
-          setErrorMessage(describeSpeechError(error));
-        }
-      }
+    // No native SpeechRecognition at all (Firefox, Safari), the native path started but never
+    // produced a single event within the watchdog window (Brave's documented hang), or it hit a
+    // "network"/"service-not-allowed" error (also Brave - see startContinuousRecognition, which
+    // handles those internally and treats them the same as unsupported) - fall back to the same
+    // on-device Whisper path the existing dictation button uses, wrapped in basic silence-based
+    // segmenting so it can approximate continuous listening too (see voiceMode.ts).
+    const startFallback = () => {
+      // Defensive, not just cosmetic: startContinuousRecognition already guards against calling
+      // this twice for the same native session, but nothing stops *this* effect from running
+      // again in dev's StrictMode double-invoke - stopping any previous handle first keeps two
+      // fallback loops from ever running concurrently regardless of how this got called twice.
+      listenHandleRef.current?.stop();
+      setErrorMessage(null);
+      listenHandleRef.current = startContinuousLocalListening(
+        handleFinalTranscript,
+        (message) => setErrorMessage(`Voice input failed: ${message}`),
+        setFallbackStatus,
+        // Segment-based batch transcription can't tell "said during the reply" from "ambient
+        // noise picked up while nobody was talking to it" - only listen for a new segment once
+        // back in "listening" phase, not throughout thinking/speaking. See voiceMode.ts's
+        // shouldListen param docs for what this was reproduced fixing.
+        () => phaseRef.current === "listening"
+      );
+    };
+
+    const handle = startContinuousRecognition(handleFinalTranscript, setInterimTranscript, startFallback, (error) =>
+      setErrorMessage(describeSpeechError(error))
     );
     listenHandleRef.current = handle;
 
@@ -147,7 +161,7 @@ export function VoiceModeOverlay({ conversationId, onClose }: { conversationId: 
 
   const statusText =
     phase === "listening"
-      ? interimTranscript || "Listening..."
+      ? interimTranscript || fallbackStatus || "Listening..."
       : phase === "thinking"
         ? "Thinking..."
         : "Speaking - start talking to interrupt";

@@ -11,3 +11,12 @@ export interface PendingFirstMessage {
   attachmentIds: string[];
   mode: ComposerMode;
 }
+
+// Same handoff pattern, for the landing page's voice-mode button - there's no message content
+// to send yet (voice mode listens for it), just a conversation id that didn't exist when the
+// button was clicked. ChatWindow reads this once on mount, same as PENDING_FIRST_MESSAGE_KEY.
+export const PENDING_VOICE_MODE_KEY = "pendingVoiceMode";
+
+export interface PendingVoiceMode {
+  conversationId: string;
+}

@@ -122,6 +122,12 @@ export interface ContinuousListenHandle {
   stop: () => void;
 }
 
+// Brave's documented bug (see speech.ts's describeSpeechError comment) doesn't just eventually
+// error out - reproduced live, it hangs with the recognition session silently open forever: no
+// result, no error, no end event, nothing to react to. A fixed watchdog is the only way to
+// detect that "running but silently dead" state, since by definition no event fires to signal it.
+const WATCHDOG_MS = 6000;
+
 // speech.ts's startSpeechRecognition already sets continuous=true, but browsers still end the
 // underlying recognition session after a period of silence regardless - this wraps it with
 // auto-restart on end, which is what actually makes listening continuous across an entire voice
@@ -134,11 +140,29 @@ export function startContinuousRecognition(
 ): ContinuousListenHandle {
   let handle: RecognitionHandle | null = null;
   let stopped = false;
+  // Reset at the start of every session (each begin() call) - any callback firing at all proves
+  // the session is genuinely alive, regardless of what it reports.
+  let sawActivity = false;
+
+  // Permanently retires this instance before invoking onUnsupported - critical, not cosmetic:
+  // without setting `stopped` first, a delayed onEnd/onerror arriving *after* we've already given
+  // up (Brave calling .stop() on a hung session can itself trigger a late callback) would call
+  // begin() again and revive a second native session running in parallel with the fallback
+  // VoiceModeOverlay just started in response to onUnsupported - reproduced live as a rapid-fire
+  // burst of duplicate submissions once two listening loops were both feeding transcripts in.
+  const giveUp = () => {
+    stopped = true;
+    handle?.stop();
+    handle = null;
+    onUnsupported();
+  };
 
   const begin = () => {
     if (stopped) return;
+    sawActivity = false;
     handle = startSpeechRecognition(
       (transcript, isFinal) => {
+        sawActivity = true;
         if (isFinal) {
           if (transcript.trim()) onFinalResult(transcript.trim());
         } else {
@@ -146,22 +170,36 @@ export function startContinuousRecognition(
         }
       },
       () => {
+        sawActivity = true;
         handle = null;
         if (!stopped) begin();
       },
       (error) => {
+        sawActivity = true;
         handle = null;
         if (stopped) return;
         if (error === "no-speech") {
           // Not a real error for a continuous session - browsers report this after a silent
           // stretch even though nothing is actually wrong. Just restart and keep listening.
           begin();
+        } else if (error === "network" || error === "service-not-allowed") {
+          giveUp();
         } else {
           onError(error);
         }
       }
     );
-    if (!handle) onUnsupported();
+    if (!handle) {
+      giveUp();
+      return;
+    }
+    setTimeout(() => {
+      if (stopped || sawActivity || !handle) return;
+      // Hung with zero events after WATCHDOG_MS - proactively abandon it and switch to the
+      // offline fallback, the same path taken when there's no SpeechRecognition constructor at
+      // all, rather than waiting indefinitely for an onerror/onend that this bug never fires.
+      giveUp();
+    }, WATCHDOG_MS);
   };
 
   begin();
@@ -187,16 +225,43 @@ const SILENCE_MS = 1200;
 const MAX_SEGMENT_MS = 15000;
 const POLL_MS = 200;
 
+// Rejects the short, generic filler Whisper is known to hallucinate on near-silent/ambient-noise
+// audio (a real, common failure mode of this model, not hypothetical) - a defense-in-depth safety
+// net on top of shouldListen() pausing during thinking/speaking, not a substitute for it.
+const HALLUCINATION_PATTERN = /^(thanks?( you)?( for watching)?|bye|you|okay|ok|um+|uh+|hmm+)[.! ]*$/i;
+
 export function startContinuousLocalListening(
   onSegment: (transcript: string) => void,
-  onError: (message: string) => void
+  onError: (message: string) => void,
+  // Surfaces what's actually happening during this path specifically - unlike the native path,
+  // this one has real multi-second waits (model download on first use, then per-segment
+  // transcription) with nothing else to show for it, which reads as "nothing happens" without
+  // this hooked up to something visible.
+  onStatus?: (status: string) => void,
+  // Whether a new recording segment should start right now - unlike native SpeechRecognition
+  // (which streams live results and can genuinely support barge-in), this path is segment-based
+  // batch transcription with no way to know something was said *during* a turn until well after
+  // the fact, so "interrupting" mid-turn here would really just mean submitting whatever ambient
+  // noise Whisper hallucinated into text while nobody was actually talking to it. Reproduced live:
+  // without this gate, the loop keeps recording/transcribing/submitting through the entire
+  // thinking/speaking phase, each new (often hallucinated) segment aborting the turn before it,
+  // producing a rapid-fire burst of submissions bounded only by segment duration. Pausing here
+  // while a turn is in flight and resuming once back to "listening" is the fix.
+  shouldListen?: () => boolean
 ): ContinuousListenHandle {
   let stopped = false;
   let stream: MediaStream | null = null;
 
   const runSegment = async (): Promise<void> => {
     if (stopped) return;
+    if (shouldListen && !shouldListen()) {
+      setTimeout(() => {
+        if (!stopped) void runSegment();
+      }, POLL_MS);
+      return;
+    }
     try {
+      onStatus?.("Listening (offline mode)...");
       const recorderStream =
         stream ?? (stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true } }));
       const audioContext = new AudioContext();
@@ -259,8 +324,8 @@ export function startContinuousLocalListening(
       if (heardSpeech && !stopped) {
         const blob = new Blob(chunks, { type: recorder.mimeType });
         const samples = await decodeForTranscription(blob);
-        const text = await transcribeAudio(samples);
-        if (text.trim() && !stopped) onSegment(text.trim());
+        const text = (await transcribeAudio(samples, onStatus)).trim();
+        if (text && !stopped && !HALLUCINATION_PATTERN.test(text)) onSegment(text);
       }
     } catch (err) {
       if (!stopped) onError(err instanceof Error ? err.message : String(err));
