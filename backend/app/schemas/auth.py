@@ -28,6 +28,7 @@ class UserOut(BaseModel):
     is_active: bool
     is_verified: bool
     role: str
+    last_login_method: str | None
     created_at: datetime
 
 

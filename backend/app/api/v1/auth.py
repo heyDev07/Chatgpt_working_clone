@@ -57,7 +57,10 @@ async def login(
     service = AuthService(db)
     user = await service.authenticate(payload.email, payload.password)
     access_token, expires_in, refresh_token = await service.issue_tokens(
-        user, request.headers.get("user-agent"), request.client.host if request.client else None
+        user,
+        request.headers.get("user-agent"),
+        request.client.host if request.client else None,
+        login_method="password",
     )
 
     _set_refresh_cookie(response, refresh_token)

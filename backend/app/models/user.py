@@ -17,3 +17,7 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # there's no separate admin-invite flow yet, so this is how the system bootstraps its first
     # admin without requiring manual DB surgery.
     role: Mapped[str] = mapped_column(String(20), nullable=False, default="user")
+    # "password" or "google" - set on a genuine login (AuthService.issue_tokens's login_method
+    # arg), never on a silent refresh-token rotation, so this reflects how the user last actually
+    # signed in rather than just how their current session happens to have been renewed.
+    last_login_method: Mapped[str | None] = mapped_column(String(20), nullable=True)

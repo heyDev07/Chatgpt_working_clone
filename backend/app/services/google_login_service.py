@@ -120,4 +120,4 @@ async def handle_login_callback(
     if not user.is_active:
         raise ValidationAppError("Account is disabled")
 
-    return await AuthService(db).issue_tokens(user, user_agent, ip_address)
+    return await AuthService(db).issue_tokens(user, user_agent, ip_address, login_method="google")

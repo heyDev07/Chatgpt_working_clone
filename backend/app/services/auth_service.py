@@ -49,7 +49,11 @@ class AuthService:
         return user
 
     async def issue_tokens(
-        self, user: User, user_agent: str | None, ip_address: str | None
+        self,
+        user: User,
+        user_agent: str | None,
+        ip_address: str | None,
+        login_method: str | None = None,
     ) -> tuple[str, int, str]:
         access_token, expires_in = create_access_token(str(user.id))
 
@@ -61,6 +65,11 @@ class AuthService:
             user_agent=user_agent,
             ip_address=ip_address,
         )
+        # None (the default) leaves the field untouched - rotate_refresh_token calls issue_tokens
+        # too, for a silent session renewal that isn't a real login and shouldn't overwrite what
+        # the user actually last signed in with.
+        if login_method is not None:
+            user.last_login_method = login_method
         await self.db.commit()
         return access_token, expires_in, refresh_token
 
