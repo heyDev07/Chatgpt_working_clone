@@ -240,7 +240,19 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
         // persisted version popped back in from the cache. Awaiting means the real message
         // is already in the cache by the time the placeholder disappears - one bubble
         // replaces the other in the same render, nothing goes blank in between.
-        await queryClient.invalidateQueries({ queryKey: ["conversation", conversationId] });
+        //
+        // Wrapped in try/catch, not left to throw: consumeStream's onmessage calls onDone
+        // without awaiting or catching it (fire-and-forget), so an unhandled rejection here -
+        // e.g. a transient refetch failure - silently skips every line below, permanently
+        // stuck on a "streaming" placeholder that never clears. Reproduced live: a real user
+        // hit this and the reply just sat there mid-turn forever. The turn already succeeded
+        // server-side by the time onDone fires - a failed refetch shouldn't undo that from the
+        // user's perspective, it should just mean the next natural refetch catches up.
+        try {
+          await queryClient.invalidateQueries({ queryKey: ["conversation", conversationId] });
+        } catch {
+          // best-effort - see comment above
+        }
         setIsSending(false);
         setStreamingContent(null);
         setToolActivity([]);
@@ -339,7 +351,13 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
           onToolResult: handleToolResult,
           onToolConfirmationRequired: handleToolConfirmationRequired,
           onDone: async () => {
-            await queryClient.invalidateQueries({ queryKey: ["conversation", conversationId] });
+            // See handleSend's onDone for why this is wrapped - an unhandled rejection here
+            // would otherwise skip every state-clearing line below and leave the UI stuck.
+            try {
+              await queryClient.invalidateQueries({ queryKey: ["conversation", conversationId] });
+            } catch {
+              // best-effort
+            }
             setIsSending(false);
             setIsRegenerating(false);
             setStreamingContent(null);
@@ -379,7 +397,13 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
           onToolResult: handleToolResult,
           onToolConfirmationRequired: handleToolConfirmationRequired,
           onDone: async () => {
-            await queryClient.invalidateQueries({ queryKey: ["conversation", conversationId] });
+            // See handleSend's onDone for why this is wrapped - an unhandled rejection here
+            // would otherwise skip every state-clearing line below and leave the UI stuck.
+            try {
+              await queryClient.invalidateQueries({ queryKey: ["conversation", conversationId] });
+            } catch {
+              // best-effort
+            }
             setIsSending(false);
             setEditingState(null);
             setStreamingContent(null);
