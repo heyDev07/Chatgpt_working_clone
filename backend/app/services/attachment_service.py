@@ -11,6 +11,21 @@ from app.storage.s3_client import download_bytes, safe_storage_filename, upload_
 ALLOWED_IMAGE_CONTENT_TYPES = {"image/png", "image/jpeg", "image/webp", "image/gif"}
 MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024  # 10MB
 
+# Same five types document_service.py's Knowledge Base upload accepts - a document attached here
+# goes through the identical parse step (document_parsing.extract_text), just indexed
+# conversation-scoped in chat_service.py instead of into the user's global Knowledge Base. Capped
+# smaller than the Knowledge Base's 20MB since this one is parsed/chunked/embedded synchronously
+# inline in the message-send request, not as a fire-and-forget background job - it needs to stay
+# light enough not to make sending a message noticeably slow.
+ALLOWED_DOCUMENT_CONTENT_TYPES = {
+    "application/pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "text/plain",
+    "text/csv",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+}
+MAX_DOCUMENT_SIZE_BYTES = 5 * 1024 * 1024  # 5MB
+
 
 class AttachmentService:
     def __init__(self, db: AsyncSession):
@@ -19,16 +34,19 @@ class AttachmentService:
 
     async def upload(self, user_id: uuid.UUID, file: UploadFile) -> MessageAttachment:
         content_type = file.content_type or ""
-        if content_type not in ALLOWED_IMAGE_CONTENT_TYPES:
+        is_document = content_type in ALLOWED_DOCUMENT_CONTENT_TYPES
+        if content_type not in ALLOWED_IMAGE_CONTENT_TYPES and not is_document:
             raise ValidationAppError(
-                f"Unsupported file type '{content_type}'. Allowed: PNG, JPEG, WEBP, GIF."
+                f"Unsupported file type '{content_type}'. Allowed: PNG, JPEG, WEBP, GIF, PDF, DOCX, TXT, CSV, XLSX."
             )
 
         data = await file.read()
         if not data:
             raise ValidationAppError("Uploaded file is empty.")
-        if len(data) > MAX_IMAGE_SIZE_BYTES:
-            raise ValidationAppError("Image exceeds the 10MB upload limit.")
+        max_size = MAX_DOCUMENT_SIZE_BYTES if is_document else MAX_IMAGE_SIZE_BYTES
+        if len(data) > max_size:
+            limit_mb = max_size // (1024 * 1024)
+            raise ValidationAppError(f"File exceeds the {limit_mb}MB upload limit.")
 
         attachment = await self.attachments.create(
             user_id=user_id,

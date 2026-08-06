@@ -1,8 +1,9 @@
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.message import Message
 from app.models.message_attachment import MessageAttachment
 
 
@@ -76,6 +77,21 @@ class MessageAttachmentRepository:
             attachment.message_id = message_id
         await self.db.flush()
         return attachments
+
+    async def has_document_attachments_for_conversation(
+        self, conversation_id: uuid.UUID, content_types: set[str]
+    ) -> bool:
+        """Cheap existence check used by chat_service.py to decide whether a conversation-scoped
+        RAG search is worth an embedding call at all - mirrors DocumentRepository.
+        has_ready_documents()'s same-purpose check for the Knowledge Base, just scoped to one
+        conversation's attachments instead of a user's whole document library."""
+        result = await self.db.execute(
+            select(func.count())
+            .select_from(MessageAttachment)
+            .join(Message, MessageAttachment.message_id == Message.id)
+            .where(Message.conversation_id == conversation_id, MessageAttachment.content_type.in_(content_types))
+        )
+        return (result.scalar_one() or 0) > 0
 
     async def list_for_messages(self, message_ids: list[uuid.UUID]) -> dict[uuid.UUID, list[MessageAttachment]]:
         if not message_ids:

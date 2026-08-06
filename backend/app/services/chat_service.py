@@ -20,6 +20,7 @@ from app.core.metrics import (
 from app.db.database import async_session_factory
 from app.models.conversation import Conversation
 from app.models.message import Message
+from app.models.message_attachment import MessageAttachment
 from app.providers.base_provider import ChatMessage, ImagePart
 from app.providers.provider_manager import ProviderManager
 from app.repositories.conversation_repo import ConversationRepository
@@ -29,6 +30,9 @@ from app.repositories.memory_repo import MemoryRepository
 from app.repositories.message_attachment_repo import MessageAttachmentRepository
 from app.repositories.message_repo import MessageRepository
 from app.services.agent_coordinator import classify_agent
+from app.services.attachment_service import ALLOWED_DOCUMENT_CONTENT_TYPES
+from app.services.chunking import chunk_text
+from app.services.document_parsing import extract_text
 from app.services.memory_extraction import run_memory_extraction
 from app.services.title_generation import run_title_generation
 from app.services.tool_loop_graph import TOOL_LOOP_GRAPH, ToolLoopContext, ToolLoopState
@@ -45,6 +49,10 @@ from app.tools.job_application import SubmitJobApplicationTool, TailorResumeTool
 from app.tools.registry import build_playwright_tools, get_tool_registry
 from app.tools.reminders import CreateReminderTool
 from app.tools.router import ToolRouter
+from app.vectorstore.chat_attachment_chunks import (
+    search as search_chat_attachment_chunks,
+    upsert_chunks as upsert_chat_attachment_chunks,
+)
 from app.vectorstore.qdrant_client import search as search_document_chunks
 from app.vectorstore.semantic_cache import find_cached_answer, store_cache_entry
 
@@ -177,9 +185,16 @@ class ChatService:
             return
 
         message = await self.messages.create(conversation.id, role="user", content=content)
+        attached: list[MessageAttachment] = []
         if attachment_ids:
-            await self.attachments.attach_to_message(attachment_ids, message.id, user_id)
+            attached = await self.attachments.attach_to_message(attachment_ids, message.id, user_id)
         await self.db.commit()
+        # Synchronous, not fire-and-forget like Knowledge Base uploads (document_processing.py) -
+        # the whole point is being able to ask about the attachment in this same message, so the
+        # reply generation below has to wait for it. Best-effort internally (see the method) so a
+        # bad file degrades to "couldn't read this one" rather than breaking the turn.
+        if attached:
+            await self._process_document_attachments(conversation.id, attached)
 
         history = await self.messages.list_for_conversation(conversation.id)
 
@@ -315,10 +330,13 @@ class ChatService:
         title_was_auto = conversation.title_is_auto
 
         message.content = content
+        attached: list[MessageAttachment] = []
         if attachment_ids:
-            await self.attachments.attach_to_message(attachment_ids, message.id, user_id)
+            attached = await self.attachments.attach_to_message(attachment_ids, message.id, user_id)
         await self.messages.delete_after(conversation.id, message.created_at)
         await self.db.commit()
+        if attached:
+            await self._process_document_attachments(conversation.id, attached)
 
         if is_first_message and title_was_auto:
             conversation.title = _fallback_title(content)
@@ -411,13 +429,21 @@ class ChatService:
         only for messages already within effective_history's verbatim window (RECENT_MESSAGE_
         COUNT), which already bounds how many messages, and therefore how many image downloads,
         a single turn can incur. Older, summarized-away messages never reach this - their images
-        (like their text) are lost to the summary, same tradeoff the text already makes."""
+        (like their text) are lost to the summary, same tradeoff the text already makes.
+
+        Document-type attachments (PDF/DOCX/TXT/CSV/XLSX) are deliberately skipped here, not sent
+        as image parts - their content already reaches the model through
+        _retrieve_document_context's RAG injection (see _process_document_attachments), and every
+        provider's multimodal image input expects actual image bytes, not a document's raw bytes
+        wearing an image-shaped wrapper."""
         images = None
         if message.attachments:
-            images = [
-                ImagePart(data=await download_bytes(a.storage_key), mime_type=a.content_type)
-                for a in message.attachments
-            ]
+            image_attachments = [a for a in message.attachments if a.content_type.startswith("image/")]
+            if image_attachments:
+                images = [
+                    ImagePart(data=await download_bytes(a.storage_key), mime_type=a.content_type)
+                    for a in image_attachments
+                ]
         return ChatMessage(role=message.role, content=message.content, images=images)
 
     async def _get_effective_history(
@@ -454,18 +480,54 @@ class ChatService:
             logger.exception("Summarization failed for conversation %s, using full history", conversation.id)
             return history, None
 
+    async def _process_document_attachments(
+        self, conversation_id: uuid.UUID, attachments: list[MessageAttachment]
+    ) -> None:
+        """Chunks and embeds any document-type attachments (PDF/DOCX/TXT/CSV/XLSX - images are
+        skipped, they're multimodal input, not RAG) into the conversation-scoped
+        chat_attachment_chunks collection. Synchronous, unlike document_processing.py's
+        fire-and-forget Knowledge Base indexing - the point of attaching a document straight to a
+        message is being able to ask about it in that same message, so generation has to wait for
+        this. Best-effort per attachment: one unparseable file is logged and skipped rather than
+        failing the whole turn."""
+        settings = get_settings()
+        documents = [a for a in attachments if a.content_type in ALLOWED_DOCUMENT_CONTENT_TYPES]
+        if not documents:
+            return
+        provider = self.provider_manager.get_provider(settings.embedding_provider)
+        for attachment in documents:
+            try:
+                data = await download_bytes(attachment.storage_key)
+                text = extract_text(attachment.content_type, data)
+                chunks = chunk_text(text)
+                if not chunks:
+                    continue
+                vectors = await provider.embed_texts(
+                    chunks, settings.embedding_model, output_dimensionality=settings.embedding_dimensions
+                )
+                await upsert_chat_attachment_chunks(conversation_id, attachment.id, attachment.filename, chunks, vectors)
+            except Exception:
+                logger.exception("Chat attachment RAG processing failed for attachment %s", attachment.id)
+
     async def _retrieve_document_context(
-        self, user_id: uuid.UUID, query_text: str
+        self, user_id: uuid.UUID, conversation_id: uuid.UUID, query_text: str
     ) -> tuple[str | None, list[dict]]:
-        """Best-effort RAG retrieval over the user's uploaded documents. Never raises - an
-        embedding-provider outage or empty knowledge base should degrade to a normal chat
-        reply, not break the turn. Returns (prompt text block, source citations for the
-        client) or (None, []) when nothing relevant was found."""
+        """Best-effort RAG retrieval, merging two sources: the user's global Knowledge Base
+        (document_chunks, scoped by user_id) and any documents attached directly to this
+        conversation's messages (chat_attachment_chunks, scoped by conversation_id - see
+        _process_document_attachments). Never raises - an embedding-provider outage or no
+        documents at all should degrade to a normal chat reply, not break the turn. Returns
+        (prompt text block, source citations for the client) or (None, []) when nothing relevant
+        was found in either source."""
         settings = get_settings()
         try:
-            # Skip the embedding call entirely when the user has no processed documents -
-            # avoids an API round-trip on every chat turn for users not using RAG at all.
-            if not await self.documents.has_ready_documents(user_id):
+            # Skip the embedding call entirely when there's nothing to search in either source -
+            # avoids an API round-trip on every chat turn for conversations not using RAG at all.
+            has_knowledge_base = await self.documents.has_ready_documents(user_id)
+            has_conversation_attachments = await self.attachments.has_document_attachments_for_conversation(
+                conversation_id, ALLOWED_DOCUMENT_CONTENT_TYPES
+            )
+            if not has_knowledge_base and not has_conversation_attachments:
                 return None, []
 
             provider = self.provider_manager.get_provider(settings.embedding_provider)
@@ -475,14 +537,28 @@ class ChatService:
             if not vectors or not vectors[0]:
                 return None, []
 
-            results = await search_document_chunks(user_id, vectors[0], limit=RETRIEVAL_TOP_K)
-            relevant = [(payload, score) for payload, score in results if score >= RETRIEVAL_SCORE_THRESHOLD]
+            relevant: list[tuple[dict, float]] = []
+            if has_knowledge_base:
+                results = await search_document_chunks(user_id, vectors[0], limit=RETRIEVAL_TOP_K)
+                relevant.extend((p, s) for p, s in results if s >= RETRIEVAL_SCORE_THRESHOLD)
+            if has_conversation_attachments:
+                results = await search_chat_attachment_chunks(conversation_id, vectors[0], limit=RETRIEVAL_TOP_K)
+                relevant.extend((p, s) for p, s in results if s >= RETRIEVAL_SCORE_THRESHOLD)
             if not relevant:
                 return None, []
 
             excerpts = "\n\n".join(f"[Source: {payload['filename']}]\n{payload['text']}" for payload, _ in relevant)
+            # Knowledge Base chunks carry document_id, chat-attachment chunks carry attachment_id
+            # instead (they were never registered as a Document row - see attachment_service.py) -
+            # CitationList.tsx already branches on which fields are present, same as it already
+            # does for RAG vs. Deep Research citations.
             citations = [
-                {"filename": payload["filename"], "document_id": payload["document_id"], "score": score}
+                {
+                    "filename": payload["filename"],
+                    "score": score,
+                    **({"document_id": payload["document_id"]} if "document_id" in payload else {}),
+                    **({"attachment_id": payload["attachment_id"]} if "attachment_id" in payload else {}),
+                }
                 for payload, score in relevant
             ]
             return excerpts, citations
@@ -596,7 +672,7 @@ class ChatService:
         citations: list[dict] = []
         if history and history[-1].role == "user":
             document_context, citations = await self._retrieve_document_context(
-                conversation.user_id, history[-1].content
+                conversation.user_id, conversation.id, history[-1].content
             )
             if document_context:
                 chat_messages.append(

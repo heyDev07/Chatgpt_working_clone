@@ -16,6 +16,7 @@ from app.middleware.error_handler import register_error_handlers
 from app.middleware.request_logging import RequestLoggingMiddleware
 from app.storage.s3_client import ensure_bucket_exists
 from app.tools.registry import register_mcp_servers
+from app.vectorstore.chat_attachment_chunks import ensure_collection as ensure_chat_attachment_collection
 from app.vectorstore.qdrant_client import ensure_collection
 from app.vectorstore.semantic_cache import ensure_cache_collection
 
@@ -31,6 +32,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await ensure_bucket_exists()
     await ensure_collection()
     await ensure_cache_collection()
+    await ensure_chat_attachment_collection()
     await register_mcp_servers()
     # Starts the reminders job store's own sync engine connection and resumes any pending jobs
     # already persisted from before a restart - see app/core/scheduler.py for why this needs a

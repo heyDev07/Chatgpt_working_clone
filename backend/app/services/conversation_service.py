@@ -9,6 +9,7 @@ from app.providers.provider_manager import ProviderManager
 from app.repositories.conversation_repo import ConversationRepository
 from app.repositories.folder_repo import FolderRepository
 from app.repositories.tag_repo import TagRepository
+from app.vectorstore.chat_attachment_chunks import delete_conversation_chunks
 
 
 class ConversationService:
@@ -154,3 +155,10 @@ class ConversationService:
             raise NotFoundError("Conversation not found")
         await self.conversations.delete(conversation)
         await self.db.commit()
+        # Best-effort, same reasoning as document_service.py's delete cleanup - a conversation's
+        # chat-attached-PDF chunks (see chat_service.py::_process_document_attachments) have no
+        # other owner once the conversation is gone, and shouldn't linger in Qdrant forever.
+        try:
+            await delete_conversation_chunks(conversation_id)
+        except Exception:
+            pass
