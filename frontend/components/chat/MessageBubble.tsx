@@ -7,6 +7,7 @@ import { agentLabel } from "@/lib/agents";
 import { isSpeechSynthesisSupported, speakText, stopSpeaking } from "@/lib/speech";
 import type { Message } from "@/lib/types";
 
+import { AttachmentFile } from "./AttachmentFile";
 import { AttachmentImage } from "./AttachmentImage";
 import { CitationList } from "./CitationList";
 import { MarkdownContent } from "./MarkdownContent";
@@ -117,9 +118,13 @@ export function MessageBubble({
         <div className="flex flex-col items-end max-w-[75%]">
           {message.attachments && message.attachments.length > 0 && (
             <div className="mb-1.5 flex flex-wrap justify-end gap-2">
-              {message.attachments.map((a) => (
-                <AttachmentImage key={a.id} id={a.id} alt={a.filename} />
-              ))}
+              {message.attachments.map((a) =>
+                a.content_type.startsWith("image/") ? (
+                  <AttachmentImage key={a.id} id={a.id} alt={a.filename} />
+                ) : (
+                  <AttachmentFile key={a.id} id={a.id} filename={a.filename} />
+                )
+              )}
             </div>
           )}
           {message.content && (
@@ -186,9 +191,13 @@ export function MessageBubble({
         {!isStreaming && <CitationList citations={message.citations} />}
         {message.attachments && message.attachments.length > 0 && (
           <div className="mt-2 flex flex-wrap gap-2">
-            {message.attachments.map((a) => (
-              <AttachmentImage key={a.id} id={a.id} alt={a.filename} />
-            ))}
+            {message.attachments.map((a) =>
+              a.content_type.startsWith("image/") ? (
+                <AttachmentImage key={a.id} id={a.id} alt={a.filename} />
+              ) : (
+                <AttachmentFile key={a.id} id={a.id} filename={a.filename} />
+              )
+            )}
           </div>
         )}
         {!isStreaming && message.content && (

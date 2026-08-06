@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowUp, AudioLines, ChevronDown, ImagePlus, Mic, Square, X } from "lucide-react";
+import { ArrowUp, AudioLines, ChevronDown, FileText, ImagePlus, Mic, Square, X } from "lucide-react";
 import { useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
 
 import { Tooltip } from "@/components/ui/Tooltip";
@@ -25,6 +25,7 @@ interface PendingAttachment {
   id: string;
   previewUrl: string;
   filename: string;
+  contentType: string;
 }
 
 export function Composer({
@@ -194,7 +195,12 @@ export function Composer({
       const uploaded = await Promise.all(
         files.map(async (file) => {
           const attachment = await uploadAttachment(file);
-          return { id: attachment.id, previewUrl: URL.createObjectURL(file), filename: attachment.filename };
+          return {
+            id: attachment.id,
+            previewUrl: URL.createObjectURL(file),
+            filename: attachment.filename,
+            contentType: attachment.content_type,
+          };
         })
       );
       setPending((prev) => [...prev, ...uploaded]);
@@ -275,8 +281,23 @@ export function Composer({
             <div className="mb-2 flex flex-wrap gap-2">
               {pending.map((p) => (
                 <div key={p.id} className="group relative">
-                  {/* eslint-disable-next-line @next/next/no-img-element -- local object URL preview */}
-                  <img src={p.previewUrl} alt={p.filename} className="h-16 w-16 rounded-lg object-cover" />
+                  {p.contentType.startsWith("image/") ? (
+                    // eslint-disable-next-line @next/next/no-img-element -- local object URL preview
+                    <img src={p.previewUrl} alt={p.filename} className="h-16 w-16 rounded-lg object-cover" />
+                  ) : (
+                    // Uses the local blob URL from file-select directly rather than AttachmentFile
+                    // (which re-fetches by id) - we already have the bytes right here, no need for
+                    // a round-trip before the message is even sent.
+                    <a
+                      href={p.previewUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex h-16 max-w-[160px] items-center gap-2 rounded-lg border border-black/10 bg-black/5 px-3 text-sm text-black/70 dark:border-white/10 dark:bg-white/5 dark:text-white/70"
+                    >
+                      <FileText size={16} className="flex-shrink-0" />
+                      <span className="truncate">{p.filename}</span>
+                    </a>
+                  )}
                   <button
                     onClick={() => removeAttachment(p.id)}
                     aria-label={`Remove ${p.filename}`}
@@ -292,16 +313,16 @@ export function Composer({
             <input
               ref={fileInputRef}
               type="file"
-              accept="image/png,image/jpeg,image/webp,image/gif"
+              accept="image/png,image/jpeg,image/webp,image/gif,.pdf,.docx,.txt,.csv,.xlsx"
               multiple
               onChange={handleFileSelect}
               className="hidden"
             />
-            <Tooltip label="Add photo">
+            <Tooltip label="Add photos or files">
               <button
                 onClick={() => fileInputRef.current?.click()}
                 disabled={disabled || isUploading}
-                aria-label="Attach image"
+                aria-label="Attach image or document"
                 className="flex-shrink-0 rounded-full p-2 text-black/50 hover:bg-black/5 disabled:opacity-40 dark:text-white/50 dark:hover:bg-white/10"
               >
                 <ImagePlus size={19} />
