@@ -552,15 +552,24 @@ class ChatService:
             # instead (they were never registered as a Document row - see attachment_service.py) -
             # CitationList.tsx already branches on which fields are present, same as it already
             # does for RAG vs. Deep Research citations.
-            citations = [
-                {
-                    "filename": payload["filename"],
-                    "score": score,
-                    **({"document_id": payload["document_id"]} if "document_id" in payload else {}),
-                    **({"attachment_id": payload["attachment_id"]} if "attachment_id" in payload else {}),
-                }
-                for payload, score in relevant
-            ]
+            #
+            # Deduped by source (not left one-per-matched-chunk): a single PDF longer than one
+            # chunk routinely has 2+ chunks score above threshold for the same question, which
+            # without this produced multiple citation lines pointing at the exact same file -
+            # confirmed live. excerpts above deliberately keeps every matched chunk (more real
+            # content for the model to draw on is fine); only the citation *list* shown to the
+            # user needs one entry per document, kept at that document's best-scoring match.
+            best_by_source: dict[str, dict] = {}
+            for payload, score in relevant:
+                source_key = payload.get("document_id") or payload.get("attachment_id") or payload["filename"]
+                if source_key not in best_by_source or score > best_by_source[source_key]["score"]:
+                    best_by_source[source_key] = {
+                        "filename": payload["filename"],
+                        "score": score,
+                        **({"document_id": payload["document_id"]} if "document_id" in payload else {}),
+                        **({"attachment_id": payload["attachment_id"]} if "attachment_id" in payload else {}),
+                    }
+            citations = sorted(best_by_source.values(), key=lambda c: c["score"], reverse=True)
             return excerpts, citations
         except Exception:
             logger.exception("Document retrieval failed for user %s, continuing without it", user_id)
